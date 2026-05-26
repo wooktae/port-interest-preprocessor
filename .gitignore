@@ -1,0 +1,35 @@
+﻿__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.env.*
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Local outputs / dumps
+*.html
+*.csv
+*.xlsx
+*.parquet
+*.pkl
+*.pickle
+*.dump
+*.tmp
+
+# ML / NLP cache or local model artifacts
+.cache/
+models/
+model/
+checkpoints/
+*.bin
+*.pt
+*.pth
+*.safetensors
+
+# Local test / scratch files
+test*.py
+debug_*.py
