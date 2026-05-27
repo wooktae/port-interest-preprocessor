@@ -70,13 +70,30 @@ python pre_daily.py
 - DB connection environment variables
   - `INTEREST_DB_HOST`: PostgreSQL host. Default: `localhost`
   - `INTEREST_DB_PORT`: PostgreSQL port. Default: `5433`
-  - `INTEREST_DB_NAME`: PostgreSQL database name. Default: `interest_crawler`
+  - `INTEREST_DB_NAME`: PostgreSQL database name. Default: `portfolio`
+  - `PORTFOLIO_DB_NAME`: Portfolio PostgreSQL database name을 별도로 사용하는 환경에서는 Default를 `portfolio`로 맞춘다.
   - `INTEREST_DB_USER`: PostgreSQL user. Default: `postgres`
   - `INTEREST_DB_PASSWORD`: PostgreSQL password. Required. Example placeholder: `[REDACTED]`
 - processor version 또는 feature 산출 버전
 - raw/pre feature 테이블명과 unique key
 - 전처리 대상 trade date 또는 business date
 - 외부 holiday API 접근 정보
+
+## 데이터베이스 구조
+
+로컬 PostgreSQL 기본 DB name은 `portfolio`다. 기존 `interest_crawler` DB 기준으로 작성된 전처리 연결 설정은 `portfolio` DB를 기본값으로 사용하도록 정리한다.
+
+AWS Migration 준비 관점에서는 단일 PostgreSQL DB `portfolio` 안에 도메인별 schema를 두는 schema-per-domain 구조를 사용한다. 현재 도메인 schema는 `reference`, `interest`, `preprocessor`, `research`, `decision`, `execution`, `connector`, `ops`, `legacy`, `public`로 구분한다.
+
+이 모듈의 DB connection search_path는 아래 순서를 기준으로 한다.
+
+```sql
+preprocessor, interest, reference, legacy, public
+```
+
+schema-per-domain 전환 후에도 이 모듈의 기존 SQL은 위 search_path를 통해 동작하는 것을 전제로 한다. 즉, 전처리 테이블은 `preprocessor`, raw 관심 데이터는 `interest`, 참조성 데이터는 `reference`, 이전 호환 대상은 `legacy`, 공통 fallback은 `public` 순서로 해석된다.
+
+비밀번호, 토큰, 계좌번호, webhook URL, 실제 사용자 ID 등 민감정보는 환경변수 또는 로컬 전용 설정으로 관리한다. 문서, 예시, 로그에는 실제 값을 쓰지 않고 필요한 경우 `[REDACTED]`로 마스킹한다.
 
 ## 외부 의존성
 

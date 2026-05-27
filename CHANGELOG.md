@@ -2,14 +2,22 @@
 
 ## 2026-05-27
 
+### Added
+
+- Documented the local PostgreSQL `portfolio` DB and schema-per-domain structure for AWS Migration readiness.
+- Documented this module's DB `search_path`: `preprocessor, interest, reference, legacy, public`.
+
 ### Changed
 
 - DB connection settings were externalized to `INTEREST_DB_*` environment variables through `db_config.py`.
 - Preprocessing scripts now resolve PostgreSQL connection parameters at connection time with `get_db_config()`.
+- DB name documentation now treats `portfolio` as the default for `INTEREST_DB_NAME` and compatible `PORTFOLIO_DB_NAME` usage.
+- Clarified that existing SQL continues to work through the configured `search_path` after schema-per-domain migration.
 
 ### Security
 
 - Removed hardcoded PostgreSQL password values from preprocessing scripts.
+- Clarified that passwords, tokens, account numbers, webhook URLs, and other sensitive values must stay in environment variables or local-only config and must not be written into documentation.
 
 ## 2026-05-26
 
