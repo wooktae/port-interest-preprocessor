@@ -1,14 +1,7 @@
 import psycopg2
+from db_config import get_db_config
 from datetime import date, timedelta
 from interest_get_holidays import is_holiday
-
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "dbname": "interest_crawler",
-    "user": "postgres",
-    "password": "doflwhsk3768!"
-}
 
 PROCESSOR_VERSION = "7.0.0"
 
@@ -40,7 +33,7 @@ FLOW_W_BUY_RATIO = 0.05
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 
 def get_latest_business_date(market="KR"):

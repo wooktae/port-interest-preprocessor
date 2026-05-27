@@ -1,18 +1,11 @@
 import psycopg2
-
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "dbname": "interest_crawler",
-    "user": "postgres",
-    "password": "doflwhsk3768!"
-}
+from db_config import get_db_config
 
 PROCESSOR_VERSION = "4.0.0"
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 
 def aggregate_macro(conn):

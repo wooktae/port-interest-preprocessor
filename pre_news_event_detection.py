@@ -2,15 +2,8 @@ import json
 import re
 import time
 import psycopg2
+from db_config import get_db_config
 from psycopg2.extras import execute_batch
-
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "dbname": "interest_crawler",
-    "user": "postgres",
-    "password": "doflwhsk3768!"
-}
 
 PROCESSOR_VERSION = "EVENT-3.0.0"
 BATCH_SIZE = 5000
@@ -285,7 +278,7 @@ def run():
     print("===== PRE NEWS EVENT START =====")
     start = time.time()
 
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(**get_db_config())
     cur = conn.cursor()
 
     print("[STEP] load event dictionaries...")

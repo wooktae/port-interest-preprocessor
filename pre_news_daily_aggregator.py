@@ -1,20 +1,13 @@
 import psycopg2
+from db_config import get_db_config
 from psycopg2.extras import execute_batch
 import json
-
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "dbname": "interest_crawler",
-    "user": "postgres",
-    "password": "doflwhsk3768!"
-}
 
 PROCESSOR_VERSION = "NEWS-DAILY-2.0.0"
 
 
 def run():
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(**get_db_config())
     cur = conn.cursor()
 
     print("===== PRE NEWS DAILY FEATURE START =====")

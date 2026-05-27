@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-05-27
+
+### Changed
+
+- DB connection settings were externalized to `INTEREST_DB_*` environment variables through `db_config.py`.
+- Preprocessing scripts now resolve PostgreSQL connection parameters at connection time with `get_db_config()`.
+
+### Security
+
+- Removed hardcoded PostgreSQL password values from preprocessing scripts.
+
 ## 2026-05-26
 
 ### Added

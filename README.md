@@ -67,6 +67,12 @@ python pre_daily.py
 주요 설정 유형:
 
 - PostgreSQL host, port, database, user, password
+- DB connection environment variables
+  - `INTEREST_DB_HOST`: PostgreSQL host. Default: `localhost`
+  - `INTEREST_DB_PORT`: PostgreSQL port. Default: `5433`
+  - `INTEREST_DB_NAME`: PostgreSQL database name. Default: `interest_crawler`
+  - `INTEREST_DB_USER`: PostgreSQL user. Default: `postgres`
+  - `INTEREST_DB_PASSWORD`: PostgreSQL password. Required. Example placeholder: `[REDACTED]`
 - processor version 또는 feature 산출 버전
 - raw/pre feature 테이블명과 unique key
 - 전처리 대상 trade date 또는 business date
