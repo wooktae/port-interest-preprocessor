@@ -1,4 +1,8 @@
-# pre_foreignindex.py
+"""해외지수 원천 데이터를 일자 단위 글로벌 위험 feature로 변환하는 스크립트.
+
+interest_foreignindex_raw의 주요 해외지수 수익률을 결합해 global risk,
+momentum, regime 지표를 pre_foreignindex_daily_feature에 저장한다.
+"""
 
 import psycopg2
 from db_config import get_db_config

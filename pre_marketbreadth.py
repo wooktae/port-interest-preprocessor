@@ -1,4 +1,8 @@
-# pre_marketbreadth.py
+"""시장 폭 원천 데이터를 일자 단위 breadth feature로 집계하는 스크립트.
+
+interest_marketbreadth_raw에서 상승/하락/보합 종목 수와 거래대금 변화율을
+계산해 pre_marketbreadth_daily_feature에 upsert한다.
+"""
 
 import psycopg2
 from db_config import get_db_config

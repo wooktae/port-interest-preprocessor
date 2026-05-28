@@ -1,3 +1,9 @@
+"""뉴스 원천 데이터를 종목별 감성 분석 후보 데이터로 변환하는 스크립트.
+
+interest_news_raw와 stock_universe를 읽어 종목 매핑, 키워드 추출, 감성 점수를
+계산한 뒤 pre_news_analysis에 upsert한다.
+"""
+
 import json
 import re
 import psycopg2

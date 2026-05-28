@@ -1,3 +1,9 @@
+"""일일 전처리 파이프라인을 순서대로 호출하는 orchestration 스크립트.
+
+각 pre_* 모듈의 run() entrypoint를 호출하며, 실제 실행 시 DB 읽기/쓰기와
+외부 휴일 API 호출이 연쇄적으로 발생할 수 있다.
+"""
+
 import pre_news_analysis
 import pre_news_event_detection
 import pre_news_daily_aggregator

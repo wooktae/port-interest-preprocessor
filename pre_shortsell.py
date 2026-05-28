@@ -1,3 +1,9 @@
+"""공매도 원천 데이터를 종목/일자 단위 short feature로 집계하는 스크립트.
+
+interest_shortsell_raw에서 공매도 비율 평균, 모멘텀, z-score, spike flag,
+pressure score를 계산해 pre_shortsell_daily_feature에 저장한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 

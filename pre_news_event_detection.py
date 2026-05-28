@@ -1,3 +1,9 @@
+"""뉴스 제목에서 이벤트와 섹터 노출 후보를 탐지하는 스크립트.
+
+pre_event_* 기준 테이블과 interest_news_raw를 읽어 이벤트 confidence와 방향성을
+계산하고 pre_news_event에 upsert한다.
+"""
+
 import json
 import re
 import time

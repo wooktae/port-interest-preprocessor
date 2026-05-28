@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-05-28
+
+### Added
+
+- `docs/source-file-catalog.md`를 추가해 루트 기준 주요 소스/문서 파일의 역할, 책임, 운영 주의사항을 정리했다.
+- Python 전처리 스크립트와 `db_config.py`, `interest_get_holidays.py`에 한글 module docstring을 추가했다.
+- `docs/worklog/2026-05-28.md`에 작업 전 git 상태 확인, 파일 카탈로그 작성, 설명 주석 추가, 검증 결과 기록 항목을 추가했다.
+
+### Changed
+
+- `README.md`에 2026-05-28 문서화/주석 정리 내용과 파일 카탈로그 위치를 반영했다.
+
+### Notes
+
+- 작업 전 미커밋 변경사항은 확인되지 않았다.
+- 2026-05-27 변경사항은 기존 CHANGELOG와 worklog 기준으로 DB 설정 환경변수화, schema-per-domain/search_path 문서화, 민감정보 제거 작업으로 확인했다.
+- 기능 변경 없음. SQL, batch step 순서, 함수 시그니처, DB table/column 이름은 변경하지 않았다.
+
 ## 2026-05-27
 
 ### Added

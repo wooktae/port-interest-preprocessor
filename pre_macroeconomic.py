@@ -1,3 +1,9 @@
+"""매크로 원천 데이터를 일자 단위 압력 feature로 변환하는 스크립트.
+
+interest_macroeconomic_raw의 yfinance 계열 지표를 기반으로 변동성, 금리,
+환율 압력과 종합 macro score를 pre_macroeconomic_daily_feature에 저장한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 

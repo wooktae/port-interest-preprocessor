@@ -1,3 +1,9 @@
+"""시장 단위 total daily feature를 생성하는 최종 집계 스크립트.
+
+시장 폭, 해외지수, 매크로, 원자재, 프로그램 매매, 투자자 수급 feature를 결합한다.
+최근 영업일 계산 과정에서 휴일 API helper를 사용할 수 있으므로 운영 실행에 주의한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 from datetime import date, timedelta

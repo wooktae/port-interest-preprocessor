@@ -1,3 +1,9 @@
+"""프로그램 매매 원천 데이터를 일자 단위 시장 feature로 변환하는 스크립트.
+
+interest_program_raw와 가격 원천 거래대금을 결합해 차익/비차익/전체 프로그램
+매매 비율, 압력, 모멘텀 지표를 pre_program_daily_feature에 upsert한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 

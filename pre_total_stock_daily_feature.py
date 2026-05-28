@@ -1,3 +1,9 @@
+"""종목 단위 total daily feature와 최종 점수를 생성하는 최종 집계 스크립트.
+
+가격, 수급, 공매도, 뉴스, 증권사 feature를 결합해 tape/flow/info/short 기반
+final_score를 계산하고 pre_total_stock_daily_feature에 upsert한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 

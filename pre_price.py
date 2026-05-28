@@ -1,4 +1,8 @@
-# pre_price.py
+"""가격 원천 데이터를 종목/일자 단위 가격 feature로 변환하는 스크립트.
+
+interest_price_raw를 기반으로 수익률, 모멘텀, 이동평균, 변동성, 거래량,
+캔들 관련 지표를 계산해 pre_price_daily_feature에 저장한다.
+"""
 
 import psycopg2
 from db_config import get_db_config

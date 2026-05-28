@@ -1,3 +1,9 @@
+"""증권사 리포트 원천 데이터를 분석 테이블로 정규화하는 스크립트.
+
+interest_agency_raw에서 신규 리포트를 읽어 투자의견 점수와 목표가 정보를
+pre_agency_analysis에 적재한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 

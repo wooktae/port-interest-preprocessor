@@ -1,5 +1,23 @@
 # port-interest-preprocessor
 
+## 2026-05-28 문서화/주석 정리
+
+이 저장소는 포트폴리오 관심 데이터 전처리를 담당하는 Python 마이크로서비스 루트다. 현재 구조는 패키지 디렉터리보다 독립 실행형 `pre_*.py` 스크립트 중심이며, `pre_daily.py`가 주요 전처리 후보 스크립트의 `run()` entrypoint를 순서대로 호출하는 orchestration 후보 역할을 한다.
+
+이번 정리에서 전체 파일 역할과 운영 주의사항은 `docs/source-file-catalog.md`에 별도로 정리했다. 각 Python 스크립트에는 기능 로직 변경 없이 모듈 상단 docstring을 추가해 DB 접근, 외부 API 호출 가능성, 생성/갱신 대상 feature 테이블을 빠르게 확인할 수 있도록 했다.
+
+실행 시 대부분의 스크립트는 PostgreSQL raw/pre feature 테이블을 읽거나 upsert한다. `interest_get_holidays.py`는 Nager.Date public holiday API를 호출할 수 있으므로 문서화, 정적 분석, 컴파일 검증 중에는 실제 전처리 실행과 외부 API 호출을 하지 않는다.
+
+주요 설정은 `db_config.py`에서 환경변수로 주입한다. 민감정보 값은 문서, 로그, 예시 출력에 기록하지 않고 환경변수 또는 로컬 설정 파일에서 주입한다.
+
+- `INTEREST_DB_HOST`: PostgreSQL host
+- `INTEREST_DB_PORT`: PostgreSQL port
+- `INTEREST_DB_NAME`: PostgreSQL database name
+- `INTEREST_DB_USER`: PostgreSQL user
+- `INTEREST_DB_PASSWORD`: PostgreSQL password, 필수 값이며 실제 값은 기록하지 않는다.
+
+기능 변경 없음: 이번 작업은 파일 카탈로그 작성, README/CHANGELOG/worklog 갱신, Python 파일 설명 주석 추가만 포함한다.
+
 포트폴리오 관심 데이터 전처리를 담당하는 Python 마이크로서비스 루트다. 수집 계층에서 적재한 raw 데이터를 읽어 뉴스, 증권사 리포트, 가격, 시장 폭, 매크로, 원자재, 해외지수, 투자자 수급, 프로그램 매매, 공매도, total feature 계열 테이블로 가공하는 스크립트들이 모여 있다.
 
 이 문서는 현재 로컬 파일 구조와 import/entrypoint 확인 결과를 기준으로 작성했다. 실제 전처리 실행, 외부 API 호출, DB DDL/DML, 크롤링, 주문 실행은 수행하지 않았다.

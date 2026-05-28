@@ -1,3 +1,9 @@
+"""뉴스 분석 결과를 종목/일자 단위 daily feature로 집계하는 스크립트.
+
+pre_news_analysis, pre_news_event, interest_news_raw를 결합해 감성, 이벤트,
+키워드, 신선도 지표를 pre_news_daily_feature에 저장한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 from psycopg2.extras import execute_batch

@@ -1,4 +1,8 @@
-# pre_commodity.py
+"""원자재 원천 데이터를 일자 단위 시장 feature로 집계하는 스크립트.
+
+interest_commodity_raw에서 에너지, 금속, 인플레이션/성장 압력 지표를 계산해
+pre_commodity_daily_feature에 upsert한다.
+"""
 
 import psycopg2
 from db_config import get_db_config

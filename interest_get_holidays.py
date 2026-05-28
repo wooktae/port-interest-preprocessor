@@ -1,3 +1,9 @@
+"""시장 휴일 여부를 조회하는 외부 API helper 모듈.
+
+주말을 우선 판정하고, Nager.Date public holiday API를 호출해 KR/US 휴일을
+메모리 캐시에 저장한다. 문서화/정적 검증 중에는 호출하지 않는다.
+"""
+
 import requests
 from datetime import datetime, date
 

@@ -1,3 +1,9 @@
+"""투자자 수급 원천 데이터를 종목/일자 단위 flow feature로 집계하는 스크립트.
+
+interest_investorflow_raw와 가격 원천 데이터를 결합해 외국인/기관 순매수,
+보유율, smart money, flow momentum 지표를 pre_investorflow_daily_feature에 저장한다.
+"""
+
 import psycopg2
 from db_config import get_db_config
 
