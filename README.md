@@ -126,6 +126,74 @@ schema-per-domain 전환 후에도 이 모듈의 기존 SQL은 위 search_path�
 
 외부 API 호출, DB DDL/DML은 운영 영향이 있으므로 분석 또는 문서 작업 중에는 실행하지 않는다.
 
+## AWS 운영 구조 관점
+
+이 저장소는 AWS Paper 운영 환경에서 전처리 실행 대상으로 사용될 수 있다. Preprocessor 관점에서만 정리하면 다음과 같다.
+
+- Preprocessor는 AWS Paper Daily Step 3 구간에서 전처리 실행 단위로 호출될 수 있다.
+- 실행 형태는 ECS RunTask 또는 컨테이너 실행 대상으로 `pre_daily.py` 또는 개별 `pre_*.py` entrypoint를 호출하는 구조를 상정한다.
+- 실제 cluster 이름, task definition ARN, image URI, subnet, security group, command id는 문서에 원문으로 기록하지 않는다.
+- AWS 리소스 값이 필요하면 아래 형식으로 마스킹해 표기한다.
+  - `<PREPROCESSOR_ECS_TASK>`
+  - `<ECR_IMAGE_URI>`
+  - `<TASK_DEFINITION_ARN>`
+  - `<DB_HOST>`
+  - `<COMMAND_ID>`
+- Scheduler, EventBridge, Step Functions의 개별 state/step 상세, Lambda 내부 구현, DB after-check 쿼리 결과의 세부 row는 Preprocessor 문서 범위 밖으로 두고 참조하지 않는다.
+
+## 책임 경계
+
+Preprocessor의 역할과 직접 책임지지 않는 영역을 분리해 정리한다.
+
+### Preprocessor가 담당하는 역할
+
+- `interest` schema에 적재된 raw/history 데이터를 읽어 `preprocessor` schema feature 테이블을 생성하거나 갱신한다.
+- 뉴스 분석, 뉴스 이벤트 탐지, 뉴스 일일 feature 집계를 담당한다.
+- 증권사 리포트 분석과 일일 feature 집계를 담당한다.
+- 가격, 시장 폭, 매크로, 원자재, 해외지수 daily feature 생성을 담당한다.
+- 투자자 수급, 프로그램 매매, 공매도 기반 수급/거래 구조 feature 생성을 담당한다.
+- 종목 단위 total stock feature와 시장 단위 total market feature 생성을 담당한다.
+- AWS Paper Daily Step 3에서 전처리 실행 단위로 호출될 수 있다.
+
+### Preprocessor가 직접 책임지지 않는 영역
+
+- 외부 데이터 수집 자체(KRX, Naver, yfinance 등 크롤링 실행)는 Crawler 책임이다.
+- 매수/매도 판단, 주문 생성, 주문 제출, 체결 조회, 잔고/보유 snapshot 갱신은 StrategyDecision과 MarketConnector 책임이다.
+- 백테스트와 리포트 생성은 StrategyResearch 책임이다.
+- 실행 상태 조회 UI, 승인 UI, 화면 렌더링은 View 책임이다.
+- Daily Batch 전체 orchestration, Scheduler 라인업, Step Functions state machine은 상위 orchestration 계층 책임이며 Preprocessor 내부 실행 책임이 아니다.
+
+## 데이터 흐름 관점
+
+Preprocessor 관점에서 상/하위 MS와의 데이터 연결 관계는 다음과 같다.
+
+- 입력: Crawler가 적재한 `interest` schema의 raw/history 데이터.
+- 처리: 이 저장소의 `pre_*.py` 스크립트가 `preprocessor` schema에 feature 테이블을 생성/갱신한다.
+- 참조: 종목/유니버스/공통 참조 데이터는 `reference` schema에서 조회할 수 있고, 이전 호환 대상은 `legacy` schema에서 조회할 수 있다.
+- 출력 소비: `preprocessor` schema의 total feature는 StrategyDecision과 StrategyResearch 후속 MS의 입력으로 사용될 수 있다. 다만 후속 MS의 전략 판단 로직, 주문 생성 로직, 백테스트 로직은 Preprocessor 문서 범위에서 다루지 않는다.
+
+## Daily Step 3 전처리 흐름
+
+`pre_daily.py`는 개별 전처리 스크립트의 `run()` entrypoint를 순서대로 호출하는 orchestration 후보다. 현재 소스 정적 확인 기준 호출 순서는 다음과 같다.
+
+1. `pre_news_analysis.run()`
+2. `pre_news_event_detection.run()`
+3. `pre_news_daily_aggregator.run()`
+4. `pre_agency_analysis.run()` (현재 소스에서 주석 처리되어 실행되지 않음)
+5. `pre_agency_daily_aggregator.run()`
+6. `pre_commodity.run()`
+7. `pre_foreignindex.run()`
+8. `pre_macroeconomic.run()`
+9. `pre_price.run()`
+10. `pre_marketbreadth.run()`
+11. `pre_investorflow.run()`
+12. `pre_program.run()`
+13. `pre_shortsell.run()`
+14. `pre_total_market_daily_feature.run()`
+15. `pre_total_stock_daily_feature.run()`
+
+실제 실행 시 각 단계는 DB read/upsert와 `pre_total_market_daily_feature`에 의한 외부 holiday API 호출 가능성이 연쇄적으로 발생할 수 있다. 문서 작업 중에는 실행하지 않는다.
+
 ## 안전 제약
 
 - 실제 전처리 실행 금지

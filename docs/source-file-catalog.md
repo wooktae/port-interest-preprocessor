@@ -6,7 +6,7 @@
 
 | 파일 경로 | 한글 제목 | 파일 내용 | 주요 역할 | 수정/운영 시 주의사항 |
 |---|---|---|---|---|
-| `pre_daily.py` | 일일 전처리 오케스트레이션 | 뉴스, 증권사, 시장/가격, 수급, total feature 전처리를 순서대로 호출한다. | 개별 `run()` entrypoint를 묶는 일일 배치 후보 스크립트다. | 실행 시 여러 DB upsert와 휴일 API helper 호출 가능성이 있으므로 운영 DB/일자 범위 확인 후 실행한다. 기존 호출 순서를 변경하지 않는다. |
+| `pre_daily.py` | 일일 전처리 오케스트레이션 | 뉴스, 증권사, 시장/가격, 수급, total feature 전처리를 순서대로 호출한다. | 개별 `run()` entrypoint를 묶는 일일 배치 후보 스크립트로, AWS Paper Daily Step 3에서 ECS RunTask 또는 컨테이너 실행 대상으로 호출될 수 있다. | 실행 시 여러 DB upsert와 휴일 API helper 호출 가능성이 있으므로 운영 DB/일자 범위 확인 후 실행한다. 기존 호출 순서를 변경하지 않는다. 현재 소스에서 `pre_agency_analysis.run()` 호출은 주석 처리되어 있으므로 유지/해제 시 downstream feature 영향을 함께 확인한다. |
 | `db_config.py` | 공통 DB 연결 설정 | PostgreSQL 연결 파라미터와 schema search_path를 환경변수 기반으로 구성한다. | 모든 전처리 스크립트의 DB 접속 설정 단일화 지점이다. | `INTEREST_DB_PASSWORD`는 필수 환경변수이며 문서/로그에 실제 값을 기록하지 않는다. |
 
 ## 뉴스 전처리 후보
@@ -21,7 +21,7 @@
 
 | 파일 경로 | 한글 제목 | 파일 내용 | 주요 역할 | 수정/운영 시 주의사항 |
 |---|---|---|---|---|
-| `pre_agency_analysis.py` | 증권사 리포트 분석 | 원천 리포트의 투자의견을 점수로 정규화하고 목표가 정보를 적재한다. | `interest_agency_raw` 신규 행을 `pre_agency_analysis`로 변환한다. | 추천어 매핑 변경은 recommendation score 의미를 바꾼다. |
+| `pre_agency_analysis.py` | 증권사 리포트 분석 | 원천 리포트의 투자의견을 점수로 정규화하고 목표가 정보를 적재한다. | `interest_agency_raw` 신규 행을 `pre_agency_analysis`로 변환한다. | 추천어 매핑 변경은 recommendation score 의미를 바꾼다. 현재 `pre_daily.py`에서는 호출이 주석 처리되어 있어 단독 실행 시에만 갱신된다. |
 | `pre_agency_daily_aggregator.py` | 증권사 일별 집계 | 리포트 수, 추천 점수, 목표가 업사이드 비율을 종목/일자 단위로 계산한다. | `pre_agency_daily_feature` 생성/갱신 담당이다. | 가격 raw와 lateral join을 사용하므로 가격 데이터 선행 적재 여부를 확인한다. |
 
 ## 가격/시장 폭 전처리 후보
@@ -75,3 +75,13 @@
 ## 정리 후보
 
 현재 `rg --files` 기준으로 루트에 남아 있는 운영 소스 외 unused/legacy 의심 파일은 별도로 확인되지 않았다. 향후 test/debug/cache/model output dump 파일이 발견되면 삭제하지 말고 이 문서에 정리 후보로 표시한 뒤 별도 승인 절차를 따른다.
+
+## 실행 위험 요약
+
+Preprocessor 관점에서 각 파일의 실행 위험을 짧게 정리한다. 문서 작업 중에는 아래 위험이 있는 파일을 실행하지 않는다.
+
+- DB read/upsert 가능: `pre_daily.py`, `pre_news_analysis.py`, `pre_news_event_detection.py`, `pre_news_daily_aggregator.py`, `pre_agency_analysis.py`, `pre_agency_daily_aggregator.py`, `pre_price.py`, `pre_marketbreadth.py`, `pre_macroeconomic.py`, `pre_commodity.py`, `pre_foreignindex.py`, `pre_investorflow.py`, `pre_program.py`, `pre_shortsell.py`, `pre_total_market_daily_feature.py`, `pre_total_stock_daily_feature.py`
+- 외부 holiday API 호출 가능: `interest_get_holidays.py`, `pre_total_market_daily_feature.py`(helper 경유)
+- 모델 다운로드/학습/추론 가능성: 현재 파일 정적 확인 기준으로는 뉴스 분석/이벤트 탐지 스크립트가 사전/규칙 기반이지만, 모델 의존 코드가 추가되면 이 항목을 별도로 갱신한다.
+- 대량 feature 갱신 가능: `pre_total_market_daily_feature.py`, `pre_total_stock_daily_feature.py`, `pre_price.py`, `pre_investorflow.py`
+- validation/check 성격이라도 DB 또는 외부 요청을 유발할 가능성이 있는 파일: `pre_daily.py`(전체 파이프라인), `interest_get_holidays.py`(외부 API)
