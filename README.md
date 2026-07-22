@@ -1,217 +1,479 @@
 # port-interest-preprocessor
 
-## 2026-05-28 문서화/주석 정리
+Crawler가 적재한 raw/history 데이터를 읽어 뉴스, 리서치, 가격, 시장, 매크로, 원자재, 해외지수, 수급과 거래구조 feature를 생성하는 Python 마이크로서비스다.
 
-이 저장소는 포트폴리오 관심 데이터 전처리를 담당하는 Python 마이크로서비스 루트다. 현재 구조는 패키지 디렉터리보다 독립 실행형 `pre_*.py` 스크립트 중심이며, `pre_daily.py`가 주요 전처리 후보 스크립트의 `run()` entrypoint를 순서대로 호출하는 orchestration 후보 역할을 한다.
+처리 결과는 PostgreSQL의 `preprocessor` schema에 저장되며, Strategy Research와 Strategy Decision이 후속 입력으로 사용할 수 있다.
 
-이번 정리에서 전체 파일 역할과 운영 주의사항은 `docs/source-file-catalog.md`에 별도로 정리했다. 각 Python 스크립트에는 기능 로직 변경 없이 모듈 상단 docstring을 추가해 DB 접근, 외부 API 호출 가능성, 생성/갱신 대상 feature 테이블을 빠르게 확인할 수 있도록 했다.
+이 저장소의 실행 경로는 대량 DB read, delete, insert와 upsert로 이어질 수 있고 일부 단계는 외부 holiday API를 호출할 수 있으므로 정적 분석과 문서 작업을 기본값으로 한다.
 
-실행 시 대부분의 스크립트는 PostgreSQL raw/pre feature 테이블을 읽거나 upsert한다. `interest_get_holidays.py`는 Nager.Date public holiday API를 호출할 수 있으므로 문서화, 정적 분석, 컴파일 검증 중에는 실제 전처리 실행과 외부 API 호출을 하지 않는다.
+## 현재 상태
 
-주요 설정은 `db_config.py`에서 환경변수로 주입한다. 민감정보 값은 문서, 로그, 예시 출력에 기록하지 않고 환경변수 또는 로컬 설정 파일에서 주입한다.
+| 항목 | 값 |
+| --- | --- |
+| 운영 성격 | AWS Paper Daily Step 3 전처리 |
+| 기본 구조 | 독립 실행형 `pre_*.py` script 중심 |
+| Daily orchestration | `pre_daily.py` |
+| 입력 | `interest` raw/history |
+| 출력 | `preprocessor` feature |
+| 참조 | `reference` · `legacy` |
+| downstream | Strategy Research · Strategy Decision |
+| 외부 요청 | Holiday API 가능 |
+| Database | PostgreSQL `portfolio` |
+| 문서 기본 원칙 | DB · API 실행 없이 정적 확인 |
 
-- `INTEREST_DB_HOST`: PostgreSQL host
-- `INTEREST_DB_PORT`: PostgreSQL port
-- `INTEREST_DB_NAME`: PostgreSQL database name
-- `INTEREST_DB_USER`: PostgreSQL user
-- `INTEREST_DB_PASSWORD`: PostgreSQL password, 필수 값이며 실제 값은 기록하지 않는다.
+> `analysis`, `aggregator`, `feature`라는 이름이 붙은 파일도 DB 쓰기와 대량 재계산을 수행할 수 있다. 문서 검증 목적으로 실행하지 않는다.
 
-기능 변경 없음: 이번 작업은 파일 카탈로그 작성, README/CHANGELOG/worklog 갱신, Python 파일 설명 주석 추가만 포함한다.
+## 기술 스택
 
-포트폴리오 관심 데이터 전처리를 담당하는 Python 마이크로서비스 루트다. 수집 계층에서 적재한 raw 데이터를 읽어 뉴스, 증권사 리포트, 가격, 시장 폭, 매크로, 원자재, 해외지수, 투자자 수급, 프로그램 매매, 공매도, total feature 계열 테이블로 가공하는 스크립트들이 모여 있다.
+| 항목 | 값 |
+| --- | --- |
+| Language | Python |
+| Database Driver | psycopg2 · psycopg2.extras |
+| Database | PostgreSQL |
+| HTTP | Requests |
+| External API | Holiday API |
+| Compute | Container · ECS RunTask 후보 |
 
-이 문서는 현재 로컬 파일 구조와 import/entrypoint 확인 결과를 기준으로 작성했다. 실제 전처리 실행, 외부 API 호출, DB DDL/DML, 크롤링, 주문 실행은 수행하지 않았다.
+## 책임 경계
 
-## 현재 구조
+### 담당 범위
 
-현재 루트는 패키지 디렉터리보다 독립 실행형 Python 스크립트 중심이다.
+| 영역 | 역할 |
+| --- | --- |
+| News | 종목 매핑 · 감성 · keyword · event |
+| Agency | 투자의견 · 목표가 분석 |
+| Price | 가격 feature |
+| Market Breadth | 시장 폭 feature |
+| Macro | 매크로 daily feature |
+| Commodity | 원자재 daily feature |
+| Foreign Index | 해외지수 daily feature |
+| Flow | 투자자 수급 feature |
+| Program | 프로그램 매매 feature |
+| Short Sell | 공매도 feature |
+| Total Stock | 종목 단위 종합 feature |
+| Total Market | 시장 단위 종합 feature |
+| Persistence | `preprocessor` schema 생성 · 갱신 |
 
-- orchestration 후보
-  - `pre_daily.py`: 뉴스, 증권사, 원자재, 해외지수, 매크로, 가격, 시장 폭, 수급, 프로그램, 공매도, total market/stock feature 전처리를 순서대로 호출하는 일일 전처리 후보.
-- 뉴스 전처리 후보
-  - `pre_news_analysis.py`: `interest_news_raw`와 종목 alias를 기반으로 뉴스-종목 매핑, 감성 점수, 키워드 등 `pre_news_analysis` 후보 데이터를 생성.
-  - `pre_news_event_detection.py`: 이벤트 master/keyword/sector weight를 사용해 뉴스 이벤트 후보를 탐지하고 `pre_news_event` 계열로 적재.
-  - `pre_news_daily_aggregator.py`: 뉴스 분석 결과를 종목/일자 단위 `pre_news_daily_feature`로 집계.
-- 증권사 리포트 전처리 후보
-  - `pre_agency_analysis.py`: 증권사 raw 리포트의 투자의견/목표가 정보를 점수화해 `pre_agency_analysis` 후보 데이터를 생성.
-  - `pre_agency_daily_aggregator.py`: 증권사 리포트 분석 결과를 종목/일자 단위 `pre_agency_daily_feature`로 집계.
-- 가격/시장 전처리 후보
-  - `pre_price.py`: 가격 raw 데이터를 종목/일자 단위 가격 feature로 가공.
-  - `pre_marketbreadth.py`: 시장 폭 raw 데이터를 일자 단위 market breadth feature로 가공.
-- 매크로/원자재/해외지수 전처리 후보
-  - `pre_macroeconomic.py`: `interest_macroeconomic_raw` 기반 VIX, 금리, 환율 등 매크로 daily feature 생성.
-  - `pre_commodity.py`: `interest_commodity_raw` 기반 WTI, Brent, gold, silver, copper, natural gas 등 원자재 daily feature 생성.
-  - `pre_foreignindex.py`: `interest_foreignindex_raw` 기반 SP500, NASDAQ, Dow Jones, Nikkei, Shanghai, Hang Seng 등 해외지수 daily feature 생성.
-- 수급/거래 구조 전처리 후보
-  - `pre_investorflow.py`: 투자자 수급 raw와 가격 raw를 결합해 외국인/기관 순매수, 보유율, flow momentum 등 종목/일자 feature 생성.
-  - `pre_program.py`: 프로그램 매매 raw를 일자 단위 feature로 가공.
-  - `pre_shortsell.py`: 공매도 raw를 종목/일자 단위 feature로 가공.
-- total feature 전처리 후보
-  - `pre_total_stock_daily_feature.py`: 가격, 수급, 공매도, 뉴스, 증권사 feature를 결합해 종목/일자 total stock feature 생성.
-  - `pre_total_market_daily_feature.py`: 시장 폭, 해외지수, 매크로, 원자재, 프로그램, 시장 수급을 결합해 일자 단위 total market feature 생성. 휴일 판정 helper를 참조한다.
-- 보조 후보
-  - `interest_get_holidays.py`: 외부 holiday API를 조회하는 휴일 helper 후보. 외부 API 호출이 있으므로 문서화 작업 중 실행하지 않는다.
-- 로컬 산출물 후보
-  - `__pycache__/`, `*.pyc`, 테스트/임시 스크립트는 운영 소스로 단정하지 않고 필요 시 정리 대상으로 취급한다.
+### 직접 담당하지 않는 범위
 
-## 주요 기능
+| 항목 | 실제 책임 영역 |
+| --- | --- |
+| 외부 데이터 수집 | port-interest-crawler |
+| 전략 연구 · 백테스트 | Strategy Research |
+| 전략 판단 | Strategy Decision |
+| 주문 계획 | Strategy Execution |
+| 주문 제출 · 체결 | port-marketconnector |
+| 화면 | port-view |
+| Daily 전체 orchestration | Step Functions · Scheduler |
 
-- raw 수집 테이블을 읽어 `pre_*_daily_feature` 계열 feature 테이블로 변환
-- 뉴스 제목 기반 종목 매핑, 감성/키워드 점수화, 이벤트 탐지
-- 증권사 리포트 투자의견/목표가 기반 feature 생성
-- 가격 momentum, 시장 폭, 매크로 압력, 원자재 압력, 해외지수 수익률 feature 생성
-- 투자자 수급, 프로그램 매매, 공매도 기반 수급/거래 구조 feature 생성
-- 종목 단위 total stock feature와 시장 단위 total market feature 생성
-- `pre_daily.py`를 통한 일일 전처리 orchestration 후보 제공
+Preprocessor 안에 크롤링, 전략 판단, 주문 생성과 주문 제출 로직을 복제하지 않는다.
 
-## 실행 방법
+## 데이터 흐름
 
-각 스크립트는 독립 실행형 `run()` 또는 `main()` entrypoint를 가진 파일이 많다. 다만 실행 시 DB 연결, upsert, 외부 holiday API 호출이 발생할 수 있으므로 운영 환경에서만 의도적으로 실행해야 한다.
+| 단계 | 처리 |
+| --- | --- |
+| 입력 | Crawler가 적재한 `interest` raw/history |
+| 변환 | `pre_*.py` 분석 · 계산 · 집계 |
+| 저장 | `preprocessor` feature |
+| 참조 | `reference` ticker · universe · 기준정보 |
+| 호환 | `legacy` |
+| 소비 | Strategy Research · Strategy Decision |
 
-예시 형식:
+raw가 비어 있거나 최신성이 부족한 경우 정상 0건과 입력 장애를 구분해야 한다.
+
+과거 최신 feature를 당일 신규 결과처럼 재사용하지 않는다.
+
+## Daily Step 3
+
+`pre_daily.py`는 개별 전처리 `run()` entrypoint를 순서대로 호출하는 Daily orchestration 후보다.
+
+### 현재 단계 구성
+
+| 순서 | 단계 |
+| --- | --- |
+| 1 | `pre_news_analysis.run()` |
+| 2 | `pre_news_event_detection.run()` |
+| 3 | `pre_news_daily_aggregator.run()` |
+| 4 | `pre_agency_analysis.run()` · 주석 처리 · 미실행 |
+| 5 | `pre_agency_daily_aggregator.run()` |
+| 6 | `pre_commodity.run()` |
+| 7 | `pre_foreignindex.run()` |
+| 8 | `pre_macroeconomic.run()` |
+| 9 | `pre_price.run()` |
+| 10 | `pre_marketbreadth.run()` |
+| 11 | `pre_investorflow.run()` |
+| 12 | `pre_program.run()` |
+| 13 | `pre_shortsell.run()` |
+| 14 | `pre_total_market_daily_feature.run()` |
+| 15 | `pre_total_stock_daily_feature.run()` |
+
+실제 호출 순서는 코드가 우선한다.
+
+### 주석 처리 단계
+
+현재 소스 정적 확인 기준 `pre_agency_analysis.run()`은 `pre_daily.py`에서 주석 처리되어 실행되지 않는다.
+
+| 항목 | 처리 |
+| --- | --- |
+| 현재 상태 | Daily 자동 실행 제외 |
+| 후속 단계 | `pre_agency_daily_aggregator.py` 입력 최신성 확인 |
+| 주석 해제 | 별도 기능 변경 |
+| 문서 | 실행 중인 단계처럼 표현하지 않음 |
+
+오래된 agency analysis 결과를 당일 신규 결과처럼 집계하지 않는다.
+
+### 부분 실패
+
+| 위험 | 처리 |
+| --- | --- |
+| 중간 단계 예외 | 후속 total feature 진행 여부 확인 |
+| 반환값 미사용 | 예외 전파 방식 확인 |
+| Required 실패 | 전체 성공으로 기록 금지 |
+| Optional 단계 | 주석 처리와 실패를 구분 |
+| Total feature | 하위 feature 최신성 확인 후 생성 |
+
+실패한 단계가 있는데 SUCCESS marker만 남는 구조를 정상으로 취급하지 않는다.
+
+## 주요 파일
+
+### Orchestration과 Helper
+
+| 파일 | 역할 |
+| --- | --- |
+| `pre_daily.py` | Daily Step 3 orchestration |
+| `db_config.py` | PostgreSQL 환경변수 loader |
+| `interest_get_holidays.py` | 주말 · 공휴일 확인 |
+
+### News
+
+| 파일 | 역할 |
+| --- | --- |
+| `pre_news_analysis.py` | 뉴스-종목 매핑 · 감성 · keyword |
+| `pre_news_event_detection.py` | 뉴스 event 탐지 |
+| `pre_news_daily_aggregator.py` | 종목 · 일자 단위 뉴스 집계 |
+
+### Agency
+
+| 파일 | 역할 |
+| --- | --- |
+| `pre_agency_analysis.py` | 투자의견 · 목표가 분석 |
+| `pre_agency_daily_aggregator.py` | 종목 · 일자 단위 리포트 집계 |
+
+### Price와 Market
+
+| 파일 | 역할 |
+| --- | --- |
+| `pre_price.py` | 가격 feature |
+| `pre_marketbreadth.py` | 시장 폭 feature |
+
+### Macro 계열
+
+| 파일 | 역할 |
+| --- | --- |
+| `pre_macroeconomic.py` | 매크로 feature |
+| `pre_commodity.py` | 원자재 feature |
+| `pre_foreignindex.py` | 해외지수 feature |
+
+### Flow와 거래구조
+
+| 파일 | 역할 |
+| --- | --- |
+| `pre_investorflow.py` | 투자자 수급 feature |
+| `pre_program.py` | 프로그램 매매 feature |
+| `pre_shortsell.py` | 공매도 feature |
+
+### Total Feature
+
+| 파일 | 역할 |
+| --- | --- |
+| `pre_total_stock_daily_feature.py` | 종목 단위 total feature |
+| `pre_total_market_daily_feature.py` | 시장 단위 total feature |
+
+상세 역할은 [소스 파일 카탈로그](docs/source-file-catalog.md)를 참고한다.
+
+## Feature 영역별 기준
+
+### News
+
+| 항목 | 기준 |
+| --- | --- |
+| Mapping | alias · ticker 의미 유지 |
+| Sentiment | score 기준과 version 확인 |
+| Event | master · keyword · sector weight |
+| 중복 | 뉴스 · event unique key |
+| 순서 | analysis 이후 aggregator |
+
+### Agency
+
+| 항목 | 기준 |
+| --- | --- |
+| Opinion | normalization · score 유지 |
+| Target Price | NULL · 0 구분 |
+| Analysis | `pre_agency_analysis.run()` Daily 주석 처리 |
+| Aggregator | `interest_agency_raw` 직접 입력 · analysis 산출 비의존 |
+| 과거 값 | 당일 신규 결과처럼 사용 금지 |
+
+### Price와 Market Breadth
+
+| 항목 | 기준 |
+| --- | --- |
+| Price | 수익률 · momentum · 이동평균 |
+| Lookback | 필요한 과거 기간 유지 |
+| Missing | 거래 정지와 누락 구분 |
+| Breadth | universe · 시장 기준 |
+| 성공 | 부분 universe로 전체 성공 금지 |
+
+### Macro · Commodity · Foreign Index
+
+| 항목 | 기준 |
+| --- | --- |
+| Mapping | indicator · source 유지 |
+| Date | timezone · 시차 확인 |
+| Holiday | forward-fill 정책 확인 |
+| Missing | 빈 raw와 전일 값 유지 구분 |
+| 실패 | 일부 지표와 전체 실패 구분 |
+
+### Flow · Program · Short Sell
+
+| 항목 | 기준 |
+| --- | --- |
+| 값 의미 | 수량 · 금액 · 비율 · sign |
+| 결합 | 가격 raw와 join 기준 |
+| Date | KRX raw 최신 거래일 |
+| Empty | 실제 0건과 미수집 구분 |
+| 계산 | division by zero · NULL 처리 |
+
+### Total Feature
+
+| 항목 | 기준 |
+| --- | --- |
+| 입력 | 모든 하위 feature 최신성 |
+| 기준일 | 같은 trade date |
+| Join | key · cardinality |
+| Missing | 실패 입력을 NULL로 숨기지 않음 |
+| Weight | 변경 시 전략 영향 확인 |
+| Holiday | API 실패를 정상 SKIP으로 변환 금지 |
+
+## 실행 위험
+
+### Daily
+
+`pre_daily.py`는 여러 전처리 단계를 연쇄 실행한다.
+
+| 위험 | 내용 |
+| --- | --- |
+| Database | 대량 read · insert · update · upsert |
+| Delete | 재생성 범위에 따라 데이터 삭제 가능 |
+| Network | Holiday API |
+| Failure | 중간 실패 뒤 후속 단계 진행 가능성 |
+| Total | 불완전한 입력으로 종합 feature 생성 가능성 |
+
+### 개별 Feature
+
+개별 `pre_*.py`도 DB 쓰기와 대량 재계산을 수행할 수 있다.
+
+특히 아래 파일은 변경 영향이 크다.
+
+| 파일 | 위험 |
+| --- | --- |
+| `pre_total_stock_daily_feature.py` | 다수 종목 feature 결합 |
+| `pre_total_market_daily_feature.py` | 다수 시장 feature 결합 |
+| `pre_news_event_detection.py` | event 대량 생성 |
+| `pre_news_daily_aggregator.py` | 뉴스 일일 집계 |
+| `pre_agency_daily_aggregator.py` | 리포트 일일 집계 |
+
+## 계산 안전
+
+- 계산식 변경 전 feature 정의와 downstream 소비를 확인한다.
+- 결측값, 0, 음수와 극단값 처리 의미를 유지한다.
+- rolling window와 minimum period를 확인한다.
+- rounding과 데이터 타입을 확인한다.
+- 미래 날짜와 당일 미확정 데이터를 사용하지 않는다.
+- look-ahead bias를 만들지 않는다.
+- total score와 weight 변경은 단순 리팩터링으로 취급하지 않는다.
+
+## Database
+
+### 연결 기준
+
+| 항목 | 값 |
+| --- | --- |
+| Database | `portfolio` |
+| Config loader | `db_config.py` · `get_db_config()` |
+| 환경변수 | `INTEREST_DB_*` |
+| Password | 기본값 없음 |
+| search path | `preprocessor, interest, reference, legacy, public` |
+
+운영 환경에서는 Preprocessor 전용 DB user를 사용한다.
+
+문서의 `postgres` 기본값을 운영 권한 기준으로 해석하지 않는다.
+
+### Schema 책임
+
+| Schema | 역할 |
+| --- | --- |
+| `preprocessor` | 분석 · 집계 feature |
+| `interest` | Crawler raw · history |
+| `reference` | ticker · universe · 기준정보 |
+| `legacy` | 과거 호환 |
+| `public` | fallback search path |
+
+Preprocessor는 `research`, `decision`, `execution` 결과를 직접 생성하지 않는다.
+
+### SQL 기준
+
+- 신규 SQL은 가능한 한 schema-qualified 이름을 사용한다.
+- 기존 unqualified SQL은 connection `search_path` 기준으로 동작한다.
+- unique key와 `ON CONFLICT` 의미를 유지한다.
+- aggregation의 group key와 join cardinality를 확인한다.
+- delete 후 insert는 대상 일자와 범위를 확인한다.
+- transaction과 rollback 경계를 유지한다.
+- 부분 적재 뒤 SUCCESS를 출력하지 않는다.
+
+## Holiday API
+
+`interest_get_holidays.py` 또는 이를 참조하는 단계는 외부 holiday API를 호출할 수 있다.
+
+| 항목 | 기준 |
+| --- | --- |
+| HTTP | timeout · status 확인 |
+| 주말 | 공휴일과 구분 |
+| 실패 | 정상 영업일로 해석 금지 |
+| SKIP | API 장애를 정상 SKIP으로 숨기지 않음 |
+| Test | HTTP mock |
+
+문서 작업과 정적 분석 중에는 실제 API를 호출하지 않는다.
+
+## 설정
+
+### DB 환경변수
+
+| 환경변수 | 기본값 · 역할 |
+| --- | --- |
+| `INTEREST_DB_HOST` | `localhost` |
+| `INTEREST_DB_PORT` | `5433` |
+| `INTEREST_DB_NAME` | `portfolio` |
+| `INTEREST_DB_USER` | 환경별 Preprocessor DB user |
+| `INTEREST_DB_PASSWORD` | 기본값 없음 |
+
+PowerShell 예시:
+
+```powershell
+$env:INTEREST_DB_HOST="localhost"
+$env:INTEREST_DB_PORT="5433"
+$env:INTEREST_DB_NAME="portfolio"
+$env:INTEREST_DB_USER="[REDACTED]"
+$env:INTEREST_DB_PASSWORD="[REDACTED]"
+```
+
+### 기타 설정
+
+| 범주 | 예시 |
+| --- | --- |
+| Feature | processor version · weight |
+| Date | trade date · business date |
+| Database | raw · feature table |
+| API | holiday endpoint |
+| Runtime | ECS · container 환경변수 |
+
+실제 local config와 credential 값을 문서에 기록하지 않는다.
+
+## AWS 운영
+
+Preprocessor는 AWS Paper Daily Step 3에서 container 또는 ECS RunTask 실행 대상으로 호출될 수 있다.
+
+| 항목 | 책임 |
+| --- | --- |
+| Preprocessor | feature 처리 entrypoint |
+| ECS · Container | 실행 환경 |
+| Step Functions | Daily orchestration |
+| Scheduler | 실행 시각 |
+| Crawler | raw 입력 |
+| Strategy | feature 소비 |
+
+실제 cluster, task definition ARN, image URI, subnet과 security group은 외부 운영 사실이다.
+
+문서에는 실제 값을 기록하지 않고 placeholder만 사용한다.
+
+| 값 | Placeholder |
+| --- | --- |
+| ECS task | `<PREPROCESSOR_ECS_TASK>` |
+| ECR image | `<ECR_IMAGE_URI>` |
+| Task definition | `<TASK_DEFINITION_ARN>` |
+| DB host | `<DB_HOST>` |
+| Command id | `<COMMAND_ID>` |
+
+## 실행
+
+각 Python 파일은 독립 entrypoint일 수 있다.
+
+아래 명령은 실행 위험 예시다.
 
 ```powershell
 python pre_daily.py
 ```
 
-문서화/분석 작업 중에는 위 명령을 실행하지 않는다. 개별 전처리도 DB DDL/DML 또는 대량 upsert를 수행할 수 있으므로 대상 테이블, 입력 raw 테이블, unique key/upsert 정책, 처리 일자 범위를 확인한 뒤 실행해야 한다.
+실행 시 다수 DB 작업과 외부 holiday API 호출이 발생할 수 있다.
 
-## 설정 방법
+## 실행 금지 목록
 
-현재 스크립트들은 DB 접속정보, 처리 버전, 외부 holiday API URL 또는 로컬 환경 설정을 사용할 수 있다.
+문서 작업과 정적 분석 중에는 아래 작업을 수행하지 않는다.
 
-민감정보는 코드, 문서, 로그, 예시 출력에 기록하지 않는다. 필요한 값은 환경변수 또는 local config로 분리하고 문서에는 `[REDACTED]`로 마스킹한다.
+- `pre_daily.py` 실행
+- 개별 `pre_*.py` 실행
+- DB DDL · DML · psql
+- Holiday API 호출
+- Crawler 실행
+- 모델 다운로드 · 학습 · 추론
+- ECS · SSM · Scheduler 실행
+- Slack 호출
 
-주요 설정 유형:
+## 보안
 
-- PostgreSQL host, port, database, user, password
-- DB connection environment variables
-  - `INTEREST_DB_HOST`: PostgreSQL host. Default: `localhost`
-  - `INTEREST_DB_PORT`: PostgreSQL port. Default: `5433`
-  - `INTEREST_DB_NAME`: PostgreSQL database name. Default: `portfolio`
-  - `PORTFOLIO_DB_NAME`: Portfolio PostgreSQL database name을 별도로 사용하는 환경에서는 Default를 `portfolio`로 맞춘다.
-  - `INTEREST_DB_USER`: PostgreSQL user. Default: `postgres`
-  - `INTEREST_DB_PASSWORD`: PostgreSQL password. Required. Example placeholder: `[REDACTED]`
-- processor version 또는 feature 산출 버전
-- raw/pre feature 테이블명과 unique key
-- 전처리 대상 trade date 또는 business date
-- 외부 holiday API 접근 정보
+다음 값은 코드, 문서와 로그에 원문으로 기록하지 않는다.
 
-## 데이터베이스 구조
+- DB password와 connection string
+- API key · token
+- 실제 DB host · private IP
+- AWS account-id
+- 실제 ARN
+- ECR image URI
+- subnet · security group id
+- command id
+- local absolute path
+- Slack webhook URL
 
-로컬 PostgreSQL 기본 DB name은 `portfolio`다. 기존 `interest_crawler` DB 기준으로 작성된 전처리 연결 설정은 `portfolio` DB를 기본값으로 사용하도록 정리한다.
+Placeholder:
 
-AWS Migration 준비 관점에서는 단일 PostgreSQL DB `portfolio` 안에 도메인별 schema를 두는 schema-per-domain 구조를 사용한다. 현재 도메인 schema는 `reference`, `interest`, `preprocessor`, `research`, `decision`, `execution`, `connector`, `ops`, `legacy`, `public`로 구분한다.
-
-이 모듈의 DB connection search_path는 아래 순서를 기준으로 한다.
-
-```sql
-preprocessor, interest, reference, legacy, public
-```
-
-schema-per-domain 전환 후에도 이 모듈의 기존 SQL은 위 search_path를 통해 동작하는 것을 전제로 한다. 즉, 전처리 테이블은 `preprocessor`, raw 관심 데이터는 `interest`, 참조성 데이터는 `reference`, 이전 호환 대상은 `legacy`, 공통 fallback은 `public` 순서로 해석된다.
-
-비밀번호, 토큰, 계좌번호, webhook URL, 실제 사용자 ID 등 민감정보는 환경변수 또는 로컬 전용 설정으로 관리한다. 문서, 예시, 로그에는 실제 값을 쓰지 않고 필요한 경우 `[REDACTED]`로 마스킹한다.
+| 값 | Placeholder |
+| --- | --- |
+| 일반 민감정보 | `[REDACTED]` |
+| DB host | `[REDACTED_DB_HOST]` |
+| ARN | `[REDACTED_ARN]` |
+| command id | `[REDACTED_COMMAND_ID]` |
+| ECS task | `<PREPROCESSOR_ECS_TASK>` |
+| ECR image | `<ECR_IMAGE_URI>` |
+| Task definition | `<TASK_DEFINITION_ARN>` |
 
 ## 외부 의존성
 
-현재 파일에서 확인되는 주요 의존성 후보는 다음과 같다.
+| 항목 | 역할 |
+| --- | --- |
+| Python | Runtime |
+| psycopg2 | PostgreSQL |
+| psycopg2.extras | Batch · helper |
+| Requests | Holiday API |
+| PostgreSQL | raw read · feature persistence |
 
-- Python
-- `psycopg2`
-- `psycopg2.extras`
-- `requests`
-- PostgreSQL
-- 외부 holiday API
+## 문서
 
-외부 API 호출, DB DDL/DML은 운영 영향이 있으므로 분석 또는 문서 작업 중에는 실행하지 않는다.
+| 문서 | 역할 |
+| --- | --- |
+| `AGENTS.md` | port-interest-preprocessor 작업 규칙 |
+| `README.md` | 현재 구조와 운영 AS-IS |
+| `CHANGELOG.md` | 주요 변경 이력 |
+| `docs/source-file-catalog.md` | 주요 파일과 책임 |
 
-## AWS 운영 구조 관점
+날짜별 `docs/worklog/*.md`는 신규 생성하지 않는다.
 
-이 저장소는 AWS Paper 운영 환경에서 전처리 실행 대상으로 사용될 수 있다. Preprocessor 관점에서만 정리하면 다음과 같다.
-
-- Preprocessor는 AWS Paper Daily Step 3 구간에서 전처리 실행 단위로 호출될 수 있다.
-- 실행 형태는 ECS RunTask 또는 컨테이너 실행 대상으로 `pre_daily.py` 또는 개별 `pre_*.py` entrypoint를 호출하는 구조를 상정한다.
-- 실제 cluster 이름, task definition ARN, image URI, subnet, security group, command id는 문서에 원문으로 기록하지 않는다.
-- AWS 리소스 값이 필요하면 아래 형식으로 마스킹해 표기한다.
-  - `<PREPROCESSOR_ECS_TASK>`
-  - `<ECR_IMAGE_URI>`
-  - `<TASK_DEFINITION_ARN>`
-  - `<DB_HOST>`
-  - `<COMMAND_ID>`
-- Scheduler, EventBridge, Step Functions의 개별 state/step 상세, Lambda 내부 구현, DB after-check 쿼리 결과의 세부 row는 Preprocessor 문서 범위 밖으로 두고 참조하지 않는다.
-
-## 책임 경계
-
-Preprocessor의 역할과 직접 책임지지 않는 영역을 분리해 정리한다.
-
-### Preprocessor가 담당하는 역할
-
-- `interest` schema에 적재된 raw/history 데이터를 읽어 `preprocessor` schema feature 테이블을 생성하거나 갱신한다.
-- 뉴스 분석, 뉴스 이벤트 탐지, 뉴스 일일 feature 집계를 담당한다.
-- 증권사 리포트 분석과 일일 feature 집계를 담당한다.
-- 가격, 시장 폭, 매크로, 원자재, 해외지수 daily feature 생성을 담당한다.
-- 투자자 수급, 프로그램 매매, 공매도 기반 수급/거래 구조 feature 생성을 담당한다.
-- 종목 단위 total stock feature와 시장 단위 total market feature 생성을 담당한다.
-- AWS Paper Daily Step 3에서 전처리 실행 단위로 호출될 수 있다.
-
-### Preprocessor가 직접 책임지지 않는 영역
-
-- 외부 데이터 수집 자체(KRX, Naver, yfinance 등 크롤링 실행)는 Crawler 책임이다.
-- 매수/매도 판단, 주문 생성, 주문 제출, 체결 조회, 잔고/보유 snapshot 갱신은 StrategyDecision과 MarketConnector 책임이다.
-- 백테스트와 리포트 생성은 StrategyResearch 책임이다.
-- 실행 상태 조회 UI, 승인 UI, 화면 렌더링은 View 책임이다.
-- Daily Batch 전체 orchestration, Scheduler 라인업, Step Functions state machine은 상위 orchestration 계층 책임이며 Preprocessor 내부 실행 책임이 아니다.
-
-## 데이터 흐름 관점
-
-Preprocessor 관점에서 상/하위 MS와의 데이터 연결 관계는 다음과 같다.
-
-- 입력: Crawler가 적재한 `interest` schema의 raw/history 데이터.
-- 처리: 이 저장소의 `pre_*.py` 스크립트가 `preprocessor` schema에 feature 테이블을 생성/갱신한다.
-- 참조: 종목/유니버스/공통 참조 데이터는 `reference` schema에서 조회할 수 있고, 이전 호환 대상은 `legacy` schema에서 조회할 수 있다.
-- 출력 소비: `preprocessor` schema의 total feature는 StrategyDecision과 StrategyResearch 후속 MS의 입력으로 사용될 수 있다. 다만 후속 MS의 전략 판단 로직, 주문 생성 로직, 백테스트 로직은 Preprocessor 문서 범위에서 다루지 않는다.
-
-## Daily Step 3 전처리 흐름
-
-`pre_daily.py`는 개별 전처리 스크립트의 `run()` entrypoint를 순서대로 호출하는 orchestration 후보다. 현재 소스 정적 확인 기준 호출 순서는 다음과 같다.
-
-1. `pre_news_analysis.run()`
-2. `pre_news_event_detection.run()`
-3. `pre_news_daily_aggregator.run()`
-4. `pre_agency_analysis.run()` (현재 소스에서 주석 처리되어 실행되지 않음)
-5. `pre_agency_daily_aggregator.run()`
-6. `pre_commodity.run()`
-7. `pre_foreignindex.run()`
-8. `pre_macroeconomic.run()`
-9. `pre_price.run()`
-10. `pre_marketbreadth.run()`
-11. `pre_investorflow.run()`
-12. `pre_program.run()`
-13. `pre_shortsell.run()`
-14. `pre_total_market_daily_feature.run()`
-15. `pre_total_stock_daily_feature.run()`
-
-실제 실행 시 각 단계는 DB read/upsert와 `pre_total_market_daily_feature`에 의한 외부 holiday API 호출 가능성이 연쇄적으로 발생할 수 있다. 문서 작업 중에는 실행하지 않는다.
-
-## 안전 제약
-
-- 실제 전처리 실행 금지
-- 외부 API 호출 금지
-- DB DDL/DML 직접 실행 금지
-- 크롤링 실행 금지
-- 주문 제출 또는 주문 실행 금지
-- 민감정보 값 출력 또는 문서 기록 금지
-- 민감정보가 필요하면 `[REDACTED]`로 마스킹
-- test/debug/cache/output dump 파일은 운영 소스로 단정하지 않고 후보 또는 로컬 산출물로만 표현
-
-## 검증
-
-문서만 수정한 경우에는 변경 범위만 확인한다.
-
-```powershell
-git status --short
-git diff --stat
-```
-
-코드 수정 시에는 외부 요청, 전처리 실행, 모델 실행, DB 쓰기, 주문 실행이 포함되지 않는 검증만 선택한다. 실행 위험이 있으면 완료 보고에 검증 한계를 남긴다.
+코드와 문서 변경 이력은 `CHANGELOG.md`에 기록한다.
