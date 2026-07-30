@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
@@ -33,3 +33,6 @@ checkpoints/
 # Local test / scratch files
 test*.py
 debug_*.py
+# DevOps CI unit tests
+!tests/
+!tests/test_pre_daily_structure.py
