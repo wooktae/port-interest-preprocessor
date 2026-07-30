@@ -1,0 +1,14 @@
+.git
+.github
+.devops/codebuild
+tests
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.venv
+venv
+evidence
+*.log

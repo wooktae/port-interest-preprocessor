@@ -1,0 +1,99 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    AWS_DEFAULT_REGION: ap-northeast-2
+    IMAGE_REPO_NAME: portfolio-interest-preprocessor
+    PUSH_IMAGE: "false"
+
+phases:
+  install:
+    commands:
+      - set -euo pipefail
+      - python --version
+      - python -m pip install --upgrade pip
+      - python -m pip install -r requirements.txt
+      - python -m pip install pytest ruff
+
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - |
+        SOURCE_SHA="${CODEBUILD_RESOLVED_SOURCE_VERSION:-unknown}"
+        if [[ "$SOURCE_SHA" == "unknown" ]]; then
+          echo "Missing CODEBUILD_RESOLVED_SOURCE_VERSION"
+          exit 1
+        fi
+
+        IMAGE_TAG="${SOURCE_SHA:0:12}"
+        AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+        ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+        IMAGE_URI="${ECR_REGISTRY}/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+
+        export SOURCE_SHA IMAGE_TAG AWS_ACCOUNT_ID ECR_REGISTRY IMAGE_URI
+
+        mkdir -p evidence
+        {
+          echo "SOURCE_SHA=${SOURCE_SHA}"
+          echo "IMAGE_TAG=${IMAGE_TAG}"
+          echo "IMAGE_URI=${IMAGE_URI}"
+        } > evidence/build.env
+
+        echo "SOURCE_SHA=${SOURCE_SHA}"
+        echo "IMAGE_TAG=${IMAGE_TAG}"
+        echo "IMAGE_URI=${IMAGE_URI}"
+
+  build:
+    commands:
+      - set -euo pipefail
+      - python -m compileall -q .
+      - python -m pytest -q
+      - python -m ruff check . --select E9,F63,F7,F82 --exclude .git --exclude __pycache__
+      - docker build --tag "${IMAGE_URI}" .
+      - docker run --rm --entrypoint python "${IMAGE_URI}" /app/.devops/scripts/container-smoke.py
+      - |
+        if [[ "${PUSH_IMAGE}" == "true" ]]; then
+          aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" |
+            docker login \
+              --username AWS \
+              --password-stdin "${ECR_REGISTRY}"
+
+          docker push "${IMAGE_URI}"
+
+          IMAGE_DIGEST="$(
+            aws ecr describe-images \
+              --region "${AWS_DEFAULT_REGION}" \
+              --repository-name "${IMAGE_REPO_NAME}" \
+              --image-ids imageTag="${IMAGE_TAG}" \
+              --query "imageDetails[0].imageDigest" \
+              --output text
+          )"
+
+          if [[ -z "$IMAGE_DIGEST" || "$IMAGE_DIGEST" == "None" ]]; then
+            echo "Image digest verification failed"
+            exit 1
+          fi
+
+          echo "IMAGE_DIGEST=${IMAGE_DIGEST}" |
+            tee evidence/image-digest.env
+
+          echo "ECR_PUSH=SUCCESS"
+        else
+          echo "ECR_PUSH=SKIPPED"
+        fi
+
+  post_build:
+    commands:
+      - |
+        if [[ "${CODEBUILD_BUILD_SUCCEEDING:-0}" == "1" ]]; then
+          echo "PREPROCESSOR_CODEBUILD=SUCCESS"
+        else
+          echo "PREPROCESSOR_CODEBUILD=FAILED"
+          exit 1
+        fi
+
+artifacts:
+  files:
+    - evidence/**/*
+  discard-paths: no
