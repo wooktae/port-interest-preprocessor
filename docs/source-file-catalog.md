@@ -366,13 +366,29 @@ downstream Strategy Research와 Strategy Decision 영향을 확인한다.
 | --- | --- |
 | `pre_daily.py` | Step 3 실행 entrypoint |
 | `Dockerfile` | 컨테이너 빌드 · 기본 CMD `pre_daily.py` |
-| ECS · Container | 실행 환경 후보 |
-| Step Functions | Daily orchestration |
+| ECS Fargate | 실행 환경 · RunTask |
+| Step Functions | Daily orchestration · `Step3_RunPreprocessor` |
 | Scheduler | 실행 시각 |
 
-repository에는 `Dockerfile`만 운영 wrapper로 확인되며 shell · PowerShell · batch wrapper는 없다.
+## DevOps Wrapper
 
-repository에 추가 ECS, shell 또는 PowerShell wrapper가 존재하면 운영 영향 파일만 이 섹션에 추가한다.
+| 파일 | 역할 |
+| --- | --- |
+| `.devops/codebuild/buildspec.yml` | CodeBuild CI gate · Docker image build · 선택적 ECR Push |
+| `.github/workflows/preprocessor-codebuild.yml` | GitHub Actions trigger · CodeBuild 실행 · OIDC 인증 |
+| `.devops/scripts/container-smoke.py` | Container import smoke test · `run()` 미호출 |
+
+### 변경 시 확인
+
+| 항목 | 값 |
+| --- | --- |
+| CI gate | Python Compile · Unit Test · Static Analysis · Container Smoke Test |
+| Image | Git SHA 기반 Tag · ECR Digest 고정 |
+| Push | 선택적 · 수동 실행 입력 제어 |
+| 인증 | GitHub OIDC · Repository Variable Role ARN |
+| 배포 | 신규 ECS Task Definition Revision · Step Functions 참조 전환 |
+
+repository에는 위 DevOps wrapper와 `Dockerfile`이 확인되며 shell · PowerShell · batch wrapper는 없다.
 
 실제 AWS 상태를 repository 파일만으로 확정하지 않는다.
 

@@ -13,6 +13,74 @@ port-interest-preprocessor 코드와 문서의 주요 변경 이력을 기록한
 | 실행 기록 | 실제 수행한 검증만 기록 |
 | 민감정보 | credential · host · ARN · command id 원문 금지 |
 
+## 2026-07-30 — Preprocessor DevOps 구현
+
+### Added
+
+| 항목 | 값 |
+| --- | --- |
+| CodeBuild BuildSpec | `.devops/codebuild/buildspec.yml` |
+| GitHub Actions workflow | `.github/workflows/preprocessor-codebuild.yml` |
+| Container Smoke Test | `.devops/scripts/container-smoke.py` |
+| Python Compile 검증 | CI gate |
+| Unit Test | `tests/test_pre_daily_structure.py` |
+| Static Analysis | ruff 기반 CI gate |
+| Docker Build | CI gate |
+| 선택적 ECR Push | 수동 실행 입력 제어 |
+| GitHub OIDC Role | Preprocessor 전용 IAM Role |
+| 배포 증적 | Git SHA와 Image Digest 기반 |
+
+### Changed
+
+| 항목 | 값 |
+| --- | --- |
+| 기본 브랜치 | GitHub Repository main 운영 |
+| Build 연계 | GitHub Actions와 CodeBuild 연계 |
+| Role 전달 | Repository Variable을 통한 OIDC Role 전달 |
+| ECS Revision | 신규 Task Definition Revision 등록 |
+| Container Image | ECR Digest로 고정 |
+| Step Functions | `Step3_RunPreprocessor`를 신규 Revision으로 전환 |
+| Rollback 검증 | 이전 Revision Rollback 후 신규 Revision 재승격 검증 |
+| End-to-End | GitHub SHA부터 활성 Revision까지 정합성 검증 |
+
+### Fixed
+
+| 항목 | 값 |
+| --- | --- |
+| AWS credential provider | GitHub Actions 미설정 문제 해결 |
+| Secret · Variable 참조 | Repository Secret과 Variable 참조 방식 불일치 정정 |
+| OIDC Role 오사용 | 다른 Repository 전용 Role 오사용 정정 |
+| 전용 Role · 최소 권한 | Preprocessor 전용 OIDC Role과 최소 CodeBuild 권한 구성 |
+| Trust Policy | immutable OIDC subject 형식에 맞춰 수정 |
+
+### Security
+
+| 항목 | 결과 |
+| --- | --- |
+| 장기 AWS Access Key | 사용 없음 |
+| 인증 | GitHub OIDC 사용 |
+| Trust Policy | Repository · branch 제한 |
+| 권한 | CodeBuild 프로젝트 단위 최소 권한 |
+| credential · secret 원문 | 신규 기록 없음 |
+| 운영 DB DML | 실행 없음 |
+| 실제 Holiday API 호출 | 없음 |
+| 주문 실행 | 없음 |
+| ARN · account ID · Digest · Run ID · Build ID | 문서 신규 기록 없음 |
+| 실제 수행한 AWS 변경 | OIDC Role 구성 · Task Definition Revision 등록 · Step Functions 참조 전환 |
+
+### Verification
+
+| 항목 | 결과 |
+| --- | --- |
+| GitHub Actions | 성공 |
+| CodeBuild | 성공 |
+| ECR Image Push | 성공 |
+| ECS Task Definition 신규 Revision | 성공 |
+| Step Functions Revision 전환 | 성공 |
+| 이전 Revision Rollback | 성공 |
+| 신규 Revision 재승격 | 성공 |
+| End-to-End 정합성 | 성공 |
+
 ## 2026-07-22 — Preprocessor 문서 기준 재정비
 
 ### Changed

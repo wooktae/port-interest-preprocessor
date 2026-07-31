@@ -19,6 +19,14 @@ Crawler가 적재한 raw/history 데이터를 읽어 뉴스, 리서치, 가격, 
 | downstream | Strategy Research · Strategy Decision |
 | 외부 요청 | Holiday API 가능 |
 | Database | PostgreSQL `portfolio` |
+| Artifact | Docker Image |
+| Build | GitHub Actions → CodeBuild |
+| Registry | ECR |
+| Runtime | ECS Fargate RunTask |
+| 운영 연결 | Step Functions `Step3_RunPreprocessor` |
+| 활성화 방식 | Task Definition Revision 고정 참조 |
+| Rollback | 이전 Revision 복구 |
+| 배포 기준 | Git SHA Tag + Image Digest |
 | 문서 기본 원칙 | DB · API 실행 없이 정적 확인 |
 
 > `analysis`, `aggregator`, `feature`라는 이름이 붙은 파일도 DB 쓰기와 대량 재계산을 수행할 수 있다. 문서 검증 목적으로 실행하지 않는다.
@@ -32,7 +40,9 @@ Crawler가 적재한 raw/history 데이터를 읽어 뉴스, 리서치, 가격, 
 | Database | PostgreSQL |
 | HTTP | Requests |
 | External API | Holiday API |
-| Compute | Container · ECS RunTask 후보 |
+| Compute | ECS Fargate RunTask |
+| Artifact | Docker Image · ECR |
+| Build | GitHub Actions → CodeBuild |
 
 ## 책임 경계
 
@@ -380,16 +390,20 @@ $env:INTEREST_DB_PASSWORD="[REDACTED]"
 
 ## AWS 운영
 
-Preprocessor는 AWS Paper Daily Step 3에서 container 또는 ECS RunTask 실행 대상으로 호출될 수 있다.
+Preprocessor는 AWS Paper Daily Step 3에서 ECS Fargate RunTask로 실행되며, Step Functions의 `Step3_RunPreprocessor`가 Task Definition Revision을 고정 참조한다.
 
 | 항목 | 책임 |
 | --- | --- |
 | Preprocessor | feature 처리 entrypoint |
-| ECS · Container | 실행 환경 |
-| Step Functions | Daily orchestration |
+| ECS Fargate | 실행 환경 · RunTask |
+| Step Functions | Daily orchestration · `Step3_RunPreprocessor` |
 | Scheduler | 실행 시각 |
 | Crawler | raw 입력 |
 | Strategy | feature 소비 |
+
+배포·실행 흐름은 아래와 같다.
+
+GitHub main → GitHub Actions → GitHub OIDC → CodeBuild → Docker Build → ECR → ECS Task Definition Revision → Step Functions Step 3
 
 실제 cluster, task definition ARN, image URI, subnet과 security group은 외부 운영 사실이다.
 
@@ -400,8 +414,42 @@ Preprocessor는 AWS Paper Daily Step 3에서 container 또는 ECS RunTask 실행
 | ECS task | `<PREPROCESSOR_ECS_TASK>` |
 | ECR image | `<ECR_IMAGE_URI>` |
 | Task definition | `<TASK_DEFINITION_ARN>` |
+| State machine | `<STATE_MACHINE_ARN>` |
+| GitHub OIDC Role | `<GITHUB_OIDC_ROLE>` |
+| CodeBuild project | `<CODEBUILD_PROJECT>` |
 | DB host | `<DB_HOST>` |
 | Command id | `<COMMAND_ID>` |
+
+## CI와 Container 빌드
+
+GitHub Actions가 AWS CodeBuild를 실행하고, CodeBuild가 CI gate와 Docker Build를 수행한다.
+
+| 항목 | 값 |
+| --- | --- |
+| Python Compile | 구문 검증 |
+| Unit Test | DB · 외부 API mock |
+| Static Analysis | ruff 기반 |
+| Container Smoke Test | import only · `run()` 미호출 |
+| Docker Build | 컨테이너 이미지 빌드 |
+| ECR Push | 선택적 · 수동 실행 입력으로 제어 |
+| 인증 | GitHub OIDC · Preprocessor 전용 Role |
+| Role 전달 | Repository Variable 기반 Role ARN |
+
+- GitHub Actions workflow는 수동 실행 입력으로 ECR Push 여부를 제어한다.
+- 각 검증은 실제 운영 DB DML이나 Holiday API 호출 없이 격리된 상태로 수행한다.
+- Container Smoke Test는 module import만 수행하고 `run()`을 호출하지 않는다.
+
+## ECS Revision 배포와 Rollback
+
+- 기존 운영 Revision을 기준선으로 읽는다.
+- 신규 이미지는 ECR Digest로 고정한다.
+- 신규 Task Definition Revision을 등록한다.
+- Step Functions의 Preprocessor State만 신규 Revision으로 전환한다.
+- 전체 State Machine 정의를 불필요하게 변경하지 않는다.
+- Rollback은 이전 Task Definition Revision을 다시 참조하도록 변경한다.
+- Rollback 상태에서 신규 Revision 참조가 남지 않았는지 확인한다.
+- 검증 후 신규 Revision으로 재승격할 수 있다.
+- 실행 중인 State Machine execution이 있으면 정의 전환을 중단한다.
 
 ## 실행
 
@@ -438,6 +486,8 @@ python pre_daily.py
 - AWS account-id
 - 실제 ARN
 - ECR image URI
+- Image Digest 전체값
+- GitHub Actions Run ID · CodeBuild Build ID
 - subnet · security group id
 - command id
 - local absolute path
@@ -454,6 +504,11 @@ Placeholder:
 | ECS task | `<PREPROCESSOR_ECS_TASK>` |
 | ECR image | `<ECR_IMAGE_URI>` |
 | Task definition | `<TASK_DEFINITION_ARN>` |
+| State machine | `<STATE_MACHINE_ARN>` |
+| GitHub OIDC Role | `<GITHUB_OIDC_ROLE>` |
+| CodeBuild project | `<CODEBUILD_PROJECT>` |
+
+Git SHA 기반 Image Tag, ECR Image Digest 고정, ECS Task Definition Revision, Step Functions 활성 Revision은 실제 전체값 대신 의미 중심으로 기록한다.
 
 ## 외부 의존성
 

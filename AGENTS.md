@@ -148,8 +148,14 @@ port-interest-preprocessor는 Crawler가 적재한 raw/history 데이터를 읽�
 | 문서 | `README.md` · `CHANGELOG.md` · `docs` |
 | 의존성 | requirements · pyproject · lock 관련 파일 |
 | 운영 | ECS · container 실행 wrapper와 관련 문서 |
+| Container | `Dockerfile` |
+| CI | `.devops/codebuild/buildspec.yml` |
+| Workflow | `.github/workflows/preprocessor-codebuild.yml` |
+| Smoke Test | `.devops/scripts/container-smoke.py` |
 
 현재 요청에 포함되지 않은 파일은 수정하지 않는다.
+
+실제 Repository에 존재하는 파일만 수정 대상으로 삼고, 존재하지 않는 파일은 만들거나 문서화하지 않는다.
 
 ### 1.4 다른 마이크로서비스
 
@@ -217,6 +223,33 @@ port-interest-preprocessor는 Crawler가 적재한 raw/history 데이터를 읽�
 - 테스트 코드 작성
 - 실행되지 않는 syntax 검토
 - 읽기 전용 Git 상태 확인
+
+### 2.4 CI 검증과 승인 필요 작업
+
+기존 DB·API 실행 위험 원칙은 유지한다.
+
+CI 파이프라인 검증은 실제 운영 side effect 없이 수행하는 작업과 명시 승인이 필요한 작업으로 구분한다.
+
+| 안전하게 수행 가능한 검증 | 비고 |
+| --- | --- |
+| Python compile | `compileall` |
+| Unit Test | DB · 외부 API mock |
+| Static Analysis | ruff 기반 |
+| Container Smoke Test | 운영 DB write 미발생 · import only |
+| Docker image build | 로컬 이미지 빌드 |
+| 읽기 전용 Git 상태 확인 | status · diff |
+
+| 명시 승인 필요 작업 | 비고 |
+| --- | --- |
+| ECR Push | Registry 반영 |
+| ECS Task Definition 등록 | 신규 Revision |
+| Step Functions 정의 변경 | Revision 참조 전환 |
+| ECS RunTask | 실제 실행 |
+| `pre_daily.py` 실행 | 대량 DB 작업 |
+| 운영 DB DML | 데이터 변경 |
+| 실제 Holiday API 호출 | 외부 요청 |
+
+Container Smoke Test는 module import만 수행하며 `run()`을 호출하지 않는다.
 
 ## 3. 데이터 흐름과 책임 경계
 
@@ -538,13 +571,15 @@ Preprocessor는 `research`, `decision`, `execution`의 결과를 직접 생성�
 
 ## 10. AWS 운영 기준
 
-Preprocessor는 AWS Paper Daily Step 3에서 container 또는 ECS RunTask 실행 대상으로 호출될 수 있다.
+### 10.1 실행 환경
+
+Preprocessor는 AWS Paper Daily Step 3에서 ECS Fargate RunTask로 실행되며, Step Functions의 `Step3_RunPreprocessor`가 Task Definition Revision을 고정 참조한다.
 
 | 항목 | 책임 |
 | --- | --- |
-| Preprocessor | feature 처리 entrypoint |
-| ECS · Container | 실행 환경 |
-| Step Functions | Daily orchestration |
+| Preprocessor | feature 처리 entrypoint (`pre_daily.py`) |
+| ECS Fargate | 실행 환경 · RunTask |
+| Step Functions | Daily orchestration · `Step3_RunPreprocessor` |
 | Scheduler | 실행 시각 |
 | Crawler | raw 입력 |
 | Strategy | feature 소비 |
@@ -554,6 +589,51 @@ Preprocessor는 AWS Paper Daily Step 3에서 container 또는 ECS RunTask 실행
 사용자가 명시적으로 요청하지 않는 한 AWS API를 호출하거나 리소스를 변경하지 않는다.
 
 운영 명령 작성 시 실제 ARN, account-id, subnet, security group과 command id를 문서에 남기지 않는다.
+
+### 10.2 DevOps 운영 기준
+
+| 항목 | 값 |
+| --- | --- |
+| Artifact | Docker Image |
+| Registry | ECR |
+| Build | GitHub Actions → CodeBuild |
+| CI gate | Python Compile · Unit Test · Static Analysis · Container Smoke Test |
+| 배포 | 신규 ECS Task Definition Revision 등록 |
+| 활성화 | Step Functions `Step3_RunPreprocessor`의 Revision 고정 참조 전환 |
+| Image 기준 | Git SHA 기반 Tag와 Image Digest |
+| Rollback | Step Functions 참조를 이전 Task Definition Revision으로 복구 |
+| 재승격 | 검증된 신규 Revision을 다시 활성화 |
+
+- 배포 철학은 Data Shadow 또는 Dry Run 검증을 우선하고, 운영 DB write 활성화는 별도 승인 대상으로 취급한다.
+- 현재 완료된 것은 CI, ECR Build/Push, ECS Revision 전환, Rollback과 End-to-End 정합성 검증이다.
+- Data Shadow 실제 실행 완료로 기록하지 않는다.
+
+### 10.3 GitHub OIDC 규칙
+
+- GitHub Actions는 장기 AWS Access Key를 사용하지 않는다.
+- AWS 인증은 GitHub OIDC를 사용한다.
+- Repository별 전용 IAM Role을 사용한다.
+- Trust Policy는 해당 Repository의 main 브랜치로 제한한다.
+- Repository ID가 포함된 immutable OIDC subject 형식을 현재 운영 기준으로 사용한다.
+- Role ARN은 GitHub Repository Variable로 전달한다.
+- OIDC Role에는 해당 CodeBuild 프로젝트 실행과 결과 조회에 필요한 최소 권한만 부여한다.
+- 다른 Repository의 OIDC Role을 재사용하지 않는다.
+- 실제 Role ARN, owner ID와 repository ID 숫자는 기록하지 않는다.
+
+### 10.4 배포·Rollback 검증 기준
+
+| 완료 기준 | 확인 |
+| --- | --- |
+| 로컬·원격 SHA | 로컬 SHA와 원격 main SHA 일치 |
+| GitHub Actions | head SHA 일치 |
+| CodeBuild | resolved source version 일치 |
+| Image Tag | Git SHA 기반 Tag 확인 |
+| ECR 정합성 | Tag와 Digest 정합성 확인 |
+| ECS 고정 | Task Definition container image의 Digest 고정 확인 |
+| Step Functions | 활성 Task Definition Revision 확인 |
+| Rollback | 이후 신규 Revision 참조 0건 확인 |
+| 재승격 | 활성 Revision과 Digest 재확인 |
+| 전환 시점 | 실행 중인 Step Functions execution이 없을 때 정의 전환 |
 
 ## 11. 실행 제한
 
