@@ -1015,29 +1015,59 @@ def run_cleanup(args) -> int:
 
     s3 = build_s3_client()
 
+    prepare_key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="prepare",
+    )
+
+    prepare = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=prepare_key,
+    )
+
+    if prepare.get("action") != "PREPARE":
+        raise RuntimeError(
+            "PREPARE_EVIDENCE_ACTION_INVALID"
+        )
+
+    if prepare.get("status") != "PASS":
+        raise RuntimeError(
+            "PREPARE_EVIDENCE_NOT_PASS"
+        )
+
+    print("PREPARE_EVIDENCE=PASS")
+
+    quality_gate_status = "UNAVAILABLE"
+
     quality_key = evidence_key(
         prefix=prefix,
         shadow_run_id=shadow_run_id,
         name="quality-gate",
     )
 
-    quality = get_evidence(
-        s3=s3,
-        bucket=bucket,
-        key=quality_key,
+    try:
+        quality = get_evidence(
+            s3=s3,
+            bucket=bucket,
+            key=quality_key,
+        )
+
+        if quality.get("action") == "QUALITY_GATE":
+            quality_gate_status = str(
+                quality.get(
+                    "status",
+                    "UNKNOWN",
+                )
+            )
+    except Exception:
+        quality_gate_status = "UNAVAILABLE"
+
+    print(
+        "QUALITY_GATE_STATUS_FOR_CLEANUP="
+        f"{quality_gate_status}"
     )
-
-    if quality.get("action") != "QUALITY_GATE":
-        raise RuntimeError(
-            "QUALITY_GATE_EVIDENCE_ACTION_INVALID"
-        )
-
-    if quality.get("status") != "PASS":
-        raise RuntimeError(
-            "QUALITY_GATE_NOT_PASS"
-        )
-
-    print("QUALITY_GATE_EVIDENCE=PASS")
 
     connection = build_db_connection()
 
@@ -1142,6 +1172,9 @@ def run_cleanup(args) -> int:
             ),
             "production_schema_dml": (
                 "FORBIDDEN"
+            ),
+            "quality_gate_status": (
+                quality_gate_status
             ),
         }
     )

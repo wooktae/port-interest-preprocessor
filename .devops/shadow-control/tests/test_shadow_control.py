@@ -1,3 +1,4 @@
+import inspect
 import importlib.util
 import sys
 import types
@@ -408,3 +409,12 @@ def test_verify_cleanup_expected_table_count():
     assert len(MODULE.EXPECTED_TABLES) == 18
     assert len(MODULE.CLEANUP_TABLES) == 15
     assert len(MODULE.REFERENCE_TABLES) == 3
+
+def test_cleanup_does_not_require_quality_gate_pass():
+    source = inspect.getsource(
+        MODULE.run_cleanup
+    )
+
+    assert "QUALITY_GATE_NOT_PASS" not in source
+    assert "PREPARE_EVIDENCE_NOT_PASS" in source
+    assert "QUALITY_GATE_STATUS_FOR_CLEANUP" in source
