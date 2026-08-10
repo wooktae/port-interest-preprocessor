@@ -287,3 +287,89 @@ def test_quality_gate_cli_action(monkeypatch):
     assert args.action == "QUALITY_GATE"
     assert args.shadow_run_id == "run-123"
     assert args.trade_date == "2026-08-07"
+
+def test_cleanup_table_contract():
+    assert len(MODULE.CLEANUP_TABLES) == 15
+
+    for table in MODULE.REFERENCE_TABLES:
+        assert table not in MODULE.CLEANUP_TABLES
+
+
+def test_cleanup_table_union_contract():
+    combined = set(
+        MODULE.CLEANUP_TABLES
+    ) | set(
+        MODULE.REFERENCE_TABLES
+    )
+
+    assert combined == set(
+        MODULE.EXPECTED_TABLES
+    )
+
+
+class FakeCleanupCursor:
+    def __init__(self):
+        self.sql = None
+
+    def execute(self, sql):
+        self.sql = sql
+
+
+def test_cleanup_sql_contract():
+    cursor = FakeCleanupCursor()
+
+    MODULE.cleanup_shadow_tables(
+        cursor
+    )
+
+    assert cursor.sql.startswith(
+        "TRUNCATE TABLE "
+    )
+
+    assert (
+        "RESTART IDENTITY"
+        in cursor.sql
+    )
+
+    assert (
+        '"preprocessor_shadow".'
+        in cursor.sql
+    )
+
+    assert (
+        '"preprocessor".'
+        not in cursor.sql
+    )
+
+    for table in MODULE.CLEANUP_TABLES:
+        assert (
+            f'"{MODULE.SHADOW_SCHEMA}"'
+            f'."{table}"'
+            in cursor.sql
+        )
+
+    for table in MODULE.REFERENCE_TABLES:
+        assert (
+            f'"{MODULE.SHADOW_SCHEMA}"'
+            f'."{table}"'
+            not in cursor.sql
+        )
+
+
+def test_cleanup_cli_action(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "shadow-control",
+            "--action",
+            "CLEANUP",
+            "--shadow-run-id",
+            "run-123",
+        ],
+    )
+
+    args = MODULE.parse_args()
+
+    assert args.action == "CLEANUP"
+    assert args.shadow_run_id == "run-123"

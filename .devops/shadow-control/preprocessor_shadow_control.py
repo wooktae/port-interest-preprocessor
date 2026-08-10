@@ -40,6 +40,12 @@ REFERENCE_TABLES = (
     "pre_event_sector_weight",
 )
 
+CLEANUP_TABLES = tuple(
+    table
+    for table in EXPECTED_TABLES
+    if table not in REFERENCE_TABLES
+)
+
 REQUIRED_SHADOW_OUTPUT_TABLES = (
     "pre_agency_daily_feature",
     "pre_commodity_daily_feature",
@@ -618,6 +624,230 @@ def run_quality_gate(args) -> int:
     return 0
 
 
+def cleanup_shadow_tables(
+    cursor,
+) -> None:
+    if len(CLEANUP_TABLES) != 15:
+        raise RuntimeError(
+            "CLEANUP_TABLE_COUNT_INVALID"
+        )
+
+    for table in CLEANUP_TABLES:
+        if table in REFERENCE_TABLES:
+            raise RuntimeError(
+                f"REFERENCE_TABLE_CLEANUP_FORBIDDEN:{table}"
+            )
+
+    qualified = ", ".join(
+        f'"{SHADOW_SCHEMA}"."{table}"'
+        for table in CLEANUP_TABLES
+    )
+
+    sql = (
+        f"TRUNCATE TABLE {qualified} "
+        "RESTART IDENTITY"
+    )
+
+    if (
+        f'"{PRODUCTION_SCHEMA}".'
+        in sql
+    ):
+        raise RuntimeError(
+            "PRODUCTION_SCHEMA_CLEANUP_FORBIDDEN"
+        )
+
+    cursor.execute(sql)
+
+
+def run_cleanup(args) -> int:
+    shadow_run_id = args.shadow_run_id.strip()
+
+    if not shadow_run_id:
+        raise RuntimeError(
+            "SHADOW_RUN_ID_REQUIRED"
+        )
+
+    bucket = require_env(
+        "PREPROCESSOR_SHADOW_EVIDENCE_BUCKET"
+    )
+
+    prefix = os.getenv(
+        "PREPROCESSOR_SHADOW_EVIDENCE_PREFIX",
+        DEFAULT_PREFIX,
+    ).strip()
+
+    s3 = build_s3_client()
+
+    quality_key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="quality-gate",
+    )
+
+    quality = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=quality_key,
+    )
+
+    if quality.get("action") != "QUALITY_GATE":
+        raise RuntimeError(
+            "QUALITY_GATE_EVIDENCE_ACTION_INVALID"
+        )
+
+    if quality.get("status") != "PASS":
+        raise RuntimeError(
+            "QUALITY_GATE_NOT_PASS"
+        )
+
+    print("QUALITY_GATE_EVIDENCE=PASS")
+
+    connection = build_db_connection()
+
+    try:
+        connection.set_session(
+            readonly=False,
+            autocommit=False,
+        )
+
+        with connection.cursor() as cursor:
+            before_counts = fetch_table_counts(
+                cursor,
+                schema=SHADOW_SCHEMA,
+                tables=CLEANUP_TABLES,
+            )
+
+            reference_before = fetch_table_counts(
+                cursor,
+                schema=SHADOW_SCHEMA,
+                tables=REFERENCE_TABLES,
+            )
+
+            cleanup_shadow_tables(
+                cursor
+            )
+
+            after_counts = fetch_table_counts(
+                cursor,
+                schema=SHADOW_SCHEMA,
+                tables=CLEANUP_TABLES,
+            )
+
+            residual_tables = sorted(
+                table
+                for table, count
+                in after_counts.items()
+                if count != 0
+            )
+
+            if residual_tables:
+                raise RuntimeError(
+                    "SHADOW_CLEANUP_RESIDUAL:"
+                    + ",".join(
+                        residual_tables
+                    )
+                )
+
+            reference_after = fetch_table_counts(
+                cursor,
+                schema=SHADOW_SCHEMA,
+                tables=REFERENCE_TABLES,
+            )
+
+            if reference_after != reference_before:
+                raise RuntimeError(
+                    "REFERENCE_TABLE_CHANGED_BY_CLEANUP"
+                )
+
+        connection.commit()
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+    print(
+        f"CLEANUP_TABLE_COUNT="
+        f"{len(CLEANUP_TABLES)}"
+    )
+    print(
+        "SHADOW_CLEANUP_RESIDUAL_COUNT=0"
+    )
+    print(
+        "REFERENCE_TABLE_PRESERVATION=PASS"
+    )
+
+    evidence = build_evidence(
+        action="CLEANUP",
+        shadow_run_id=shadow_run_id,
+        status="PASS",
+    )
+
+    evidence.update(
+        {
+            "cleanup_schema": SHADOW_SCHEMA,
+            "cleanup_table_count": (
+                len(CLEANUP_TABLES)
+            ),
+            "cleanup_tables": list(
+                CLEANUP_TABLES
+            ),
+            "before_counts": before_counts,
+            "after_counts": after_counts,
+            "residual_table_count": 0,
+            "reference_before": (
+                reference_before
+            ),
+            "reference_after": (
+                reference_after
+            ),
+            "production_schema_dml": (
+                "FORBIDDEN"
+            ),
+        }
+    )
+
+    key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="cleanup",
+    )
+
+    version_id = put_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=key,
+        payload=evidence,
+    )
+
+    print("CLEANUP_EVIDENCE_PUT=PASS")
+    print(f"CLEANUP_EVIDENCE_KEY={key}")
+    print(
+        "CLEANUP_EVIDENCE_VERSION_ID="
+        f"{version_id or ''}"
+    )
+
+    loaded = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=key,
+    )
+
+    if loaded != evidence:
+        raise RuntimeError(
+            "CLEANUP_EVIDENCE_MISMATCH"
+        )
+
+    print("CLEANUP_EVIDENCE_VERIFY=PASS")
+    print(
+        "PREPROCESSOR_SHADOW_CLEANUP=SUCCESS"
+    )
+
+    return 0
+
+
 def run_evidence_smoke(args) -> int:
     bucket = require_env(
         "PREPROCESSOR_SHADOW_EVIDENCE_BUCKET"
@@ -892,6 +1122,7 @@ def parse_args():
             "EVIDENCE_SMOKE",
             "PREPARE",
             "QUALITY_GATE",
+            "CLEANUP",
         ],
     )
 
@@ -920,6 +1151,9 @@ def main() -> int:
 
         if args.action == "QUALITY_GATE":
             return run_quality_gate(args)
+
+        if args.action == "CLEANUP":
+            return run_cleanup(args)
 
         raise RuntimeError(
             f"UNSUPPORTED_ACTION:{args.action}"
