@@ -31,8 +31,8 @@ checkpoints/
 *.safetensors
 
 # Local test / scratch files
-test*.py
-debug_*.py
+/test*.py
+/debug_*.py
 # DevOps CI unit tests
 !tests/
-!tests/test_pre_daily_structure.py
+!tests/test_*.py
