@@ -207,3 +207,83 @@ def test_prepare_cli_action(monkeypatch):
 
     assert args.action == "PREPARE"
     assert args.shadow_run_id == "run-123"
+
+def test_required_shadow_output_contract():
+    assert len(
+        MODULE.REQUIRED_SHADOW_OUTPUT_TABLES
+    ) == 14
+
+    assert (
+        "pre_agency_analysis"
+        not in MODULE.REQUIRED_SHADOW_OUTPUT_TABLES
+    )
+
+    for table in MODULE.REFERENCE_TABLES:
+        assert (
+            table
+            not in MODULE.REQUIRED_SHADOW_OUTPUT_TABLES
+        )
+
+
+def test_trade_date_core_contract():
+    assert len(
+        MODULE.TRADE_DATE_CORE_TABLES
+    ) == 12
+
+    assert (
+        "pre_total_market_daily_feature"
+        in MODULE.TRADE_DATE_CORE_TABLES
+    )
+
+    assert (
+        "pre_total_stock_daily_feature"
+        in MODULE.TRADE_DATE_CORE_TABLES
+    )
+
+
+def test_validate_positive_counts_pass():
+    MODULE.validate_positive_counts(
+        counts={
+            "a": 1,
+            "b": 10,
+        },
+        error_prefix="FAIL",
+    )
+
+
+def test_validate_positive_counts_failure():
+    with pytest.raises(
+        RuntimeError,
+        match="SHADOW_OUTPUT_MISSING",
+    ):
+        MODULE.validate_positive_counts(
+            counts={
+                "good": 1,
+                "bad": 0,
+            },
+            error_prefix=(
+                "SHADOW_OUTPUT_MISSING"
+            ),
+        )
+
+
+def test_quality_gate_cli_action(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "shadow-control",
+            "--action",
+            "QUALITY_GATE",
+            "--shadow-run-id",
+            "run-123",
+            "--trade-date",
+            "2026-08-07",
+        ],
+    )
+
+    args = MODULE.parse_args()
+
+    assert args.action == "QUALITY_GATE"
+    assert args.shadow_run_id == "run-123"
+    assert args.trade_date == "2026-08-07"

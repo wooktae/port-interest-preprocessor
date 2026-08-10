@@ -40,6 +40,38 @@ REFERENCE_TABLES = (
     "pre_event_sector_weight",
 )
 
+REQUIRED_SHADOW_OUTPUT_TABLES = (
+    "pre_agency_daily_feature",
+    "pre_commodity_daily_feature",
+    "pre_foreignindex_daily_feature",
+    "pre_investorflow_daily_feature",
+    "pre_macroeconomic_daily_feature",
+    "pre_marketbreadth_daily_feature",
+    "pre_news_analysis",
+    "pre_news_daily_feature",
+    "pre_news_event",
+    "pre_price_daily_feature",
+    "pre_program_daily_feature",
+    "pre_shortsell_daily_feature",
+    "pre_total_market_daily_feature",
+    "pre_total_stock_daily_feature",
+)
+
+TRADE_DATE_CORE_TABLES = (
+    "pre_agency_daily_feature",
+    "pre_commodity_daily_feature",
+    "pre_foreignindex_daily_feature",
+    "pre_investorflow_daily_feature",
+    "pre_macroeconomic_daily_feature",
+    "pre_marketbreadth_daily_feature",
+    "pre_news_daily_feature",
+    "pre_price_daily_feature",
+    "pre_program_daily_feature",
+    "pre_shortsell_daily_feature",
+    "pre_total_market_daily_feature",
+    "pre_total_stock_daily_feature",
+)
+
 EXPECTED_TABLE_COUNT = 18
 EXPECTED_SHADOW_SEQUENCE_COUNT = 10
 
@@ -229,6 +261,361 @@ def validate_table_contract(
         raise RuntimeError(
             "SHADOW_TABLE_CONTRACT_MISMATCH"
         )
+
+
+def fetch_trade_date_counts(
+    cursor,
+    *,
+    schema: str,
+    tables: tuple[str, ...],
+    trade_date: str,
+) -> dict[str, int]:
+    result = {}
+
+    for table in tables:
+        cursor.execute(
+            f'''
+            SELECT COUNT(*)
+            FROM "{schema}"."{table}"
+            WHERE trade_date = %s
+            ''',
+            (trade_date,),
+        )
+
+        result[table] = int(
+            cursor.fetchone()[0]
+        )
+
+    return result
+
+
+def validate_positive_counts(
+    *,
+    counts: dict[str, int],
+    error_prefix: str,
+) -> None:
+    failures = [
+        table
+        for table, count in counts.items()
+        if count <= 0
+    ]
+
+    if failures:
+        raise RuntimeError(
+            f"{error_prefix}:"
+            + ",".join(sorted(failures))
+        )
+
+
+def run_quality_gate(args) -> int:
+    shadow_run_id = args.shadow_run_id.strip()
+
+    if not shadow_run_id:
+        raise RuntimeError(
+            "SHADOW_RUN_ID_REQUIRED"
+        )
+
+    trade_date = (
+        args.trade_date.strip()
+        if args.trade_date
+        else ""
+    )
+
+    if not trade_date:
+        raise RuntimeError(
+            "TRADE_DATE_REQUIRED"
+        )
+
+    bucket = require_env(
+        "PREPROCESSOR_SHADOW_EVIDENCE_BUCKET"
+    )
+
+    prefix = os.getenv(
+        "PREPROCESSOR_SHADOW_EVIDENCE_PREFIX",
+        DEFAULT_PREFIX,
+    ).strip()
+
+    s3 = build_s3_client()
+
+    prepare_key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="prepare",
+    )
+
+    prepare = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=prepare_key,
+    )
+
+    if prepare.get("action") != "PREPARE":
+        raise RuntimeError(
+            "PREPARE_EVIDENCE_ACTION_INVALID"
+        )
+
+    if prepare.get("status") != "PASS":
+        raise RuntimeError(
+            "PREPARE_EVIDENCE_NOT_PASS"
+        )
+
+    production_baseline = (
+        prepare.get("production_baseline")
+    )
+
+    if not isinstance(
+        production_baseline,
+        dict,
+    ):
+        raise RuntimeError(
+            "PRODUCTION_BASELINE_MISSING"
+        )
+
+    print("PREPARE_EVIDENCE=PASS")
+    print(f"TRADE_DATE={trade_date}")
+
+    connection = build_db_connection()
+
+    try:
+        connection.set_session(
+            readonly=True,
+            autocommit=False,
+        )
+
+        with connection.cursor() as cursor:
+            production_current = (
+                fetch_table_counts(
+                    cursor,
+                    schema=PRODUCTION_SCHEMA,
+                    tables=EXPECTED_TABLES,
+                )
+            )
+
+            changed_tables = sorted(
+                table
+                for table in EXPECTED_TABLES
+                if (
+                    int(production_current[table])
+                    != int(
+                        production_baseline[
+                            table
+                        ]
+                    )
+                )
+            )
+
+            print(
+                "PRODUCTION_CHANGED_TABLE_COUNT="
+                f"{len(changed_tables)}"
+            )
+
+            if changed_tables:
+                raise RuntimeError(
+                    "PRODUCTION_INTEGRITY_FAILED:"
+                    + ",".join(changed_tables)
+                )
+
+            print(
+                "PRODUCTION_INTEGRITY=PASS"
+            )
+
+            shadow_output_counts = (
+                fetch_table_counts(
+                    cursor,
+                    schema=SHADOW_SCHEMA,
+                    tables=(
+                        REQUIRED_SHADOW_OUTPUT_TABLES
+                    ),
+                )
+            )
+
+            validate_positive_counts(
+                counts=shadow_output_counts,
+                error_prefix=(
+                    "SHADOW_OUTPUT_MISSING"
+                ),
+            )
+
+            print(
+                "SHADOW_REQUIRED_OUTPUT_COUNT="
+                f"{len(shadow_output_counts)}"
+            )
+            print(
+                "SHADOW_OUTPUT_POPULATION=PASS"
+            )
+
+            trade_date_counts = (
+                fetch_trade_date_counts(
+                    cursor,
+                    schema=SHADOW_SCHEMA,
+                    tables=TRADE_DATE_CORE_TABLES,
+                    trade_date=trade_date,
+                )
+            )
+
+            validate_positive_counts(
+                counts=trade_date_counts,
+                error_prefix=(
+                    "TRADE_DATE_CORE_OUTPUT_MISSING"
+                ),
+            )
+
+            print(
+                "TRADE_DATE_CORE_TABLE_COUNT="
+                f"{len(trade_date_counts)}"
+            )
+            print(
+                "TRADE_DATE_CORE_OUTPUT=PASS"
+            )
+
+            reference_production = (
+                fetch_table_counts(
+                    cursor,
+                    schema=PRODUCTION_SCHEMA,
+                    tables=REFERENCE_TABLES,
+                )
+            )
+
+            reference_shadow = (
+                fetch_table_counts(
+                    cursor,
+                    schema=SHADOW_SCHEMA,
+                    tables=REFERENCE_TABLES,
+                )
+            )
+
+            if (
+                reference_shadow
+                != reference_production
+            ):
+                raise RuntimeError(
+                    "REFERENCE_SEED_INTEGRITY_FAILED"
+                )
+
+            print(
+                "REFERENCE_SEED_INTEGRITY=PASS"
+            )
+
+            shadow_sequence_count = (
+                fetch_sequence_count(
+                    cursor,
+                    SHADOW_SCHEMA,
+                )
+            )
+
+            if (
+                shadow_sequence_count
+                != EXPECTED_SHADOW_SEQUENCE_COUNT
+            ):
+                raise RuntimeError(
+                    "SHADOW_SEQUENCE_COUNT_MISMATCH"
+                )
+
+            leaks = (
+                fetch_production_sequence_leaks(
+                    cursor
+                )
+            )
+
+            print(
+                "PRODUCTION_SEQUENCE_LEAK_COUNT="
+                f"{len(leaks)}"
+            )
+
+            if leaks:
+                raise RuntimeError(
+                    "PRODUCTION_SEQUENCE_LEAK_DETECTED"
+                )
+
+            print(
+                "SEQUENCE_CONTRACT=PASS"
+            )
+
+        connection.rollback()
+
+    finally:
+        connection.close()
+
+    evidence = build_evidence(
+        action="QUALITY_GATE",
+        shadow_run_id=shadow_run_id,
+        status="PASS",
+    )
+
+    evidence.update(
+        {
+            "trade_date": trade_date,
+            "production_integrity": "PASS",
+            "production_changed_table_count": 0,
+            "shadow_output_population": "PASS",
+            "shadow_output_counts": (
+                shadow_output_counts
+            ),
+            "trade_date_core_output": "PASS",
+            "trade_date_core_counts": (
+                trade_date_counts
+            ),
+            "reference_seed_integrity": "PASS",
+            "shadow_sequence_count": (
+                shadow_sequence_count
+            ),
+            "production_sequence_leak_count": 0,
+            "value_equality_gate": (
+                "NOT_APPLICABLE"
+            ),
+            "value_quality_owner": (
+                "PREPROCESSOR_TEAM"
+            ),
+        }
+    )
+
+    key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="quality-gate",
+    )
+
+    version_id = put_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=key,
+        payload=evidence,
+    )
+
+    print("QUALITY_GATE_EVIDENCE_PUT=PASS")
+    print(
+        f"QUALITY_GATE_EVIDENCE_KEY={key}"
+    )
+    print(
+        "QUALITY_GATE_EVIDENCE_VERSION_ID="
+        f"{version_id or ''}"
+    )
+
+    loaded = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=key,
+    )
+
+    if loaded != evidence:
+        raise RuntimeError(
+            "QUALITY_GATE_EVIDENCE_MISMATCH"
+        )
+
+    print(
+        "QUALITY_GATE_EVIDENCE_VERIFY=PASS"
+    )
+    print(
+        "VALUE_EQUALITY_GATE=NOT_APPLICABLE"
+    )
+    print(
+        "VALUE_QUALITY_OWNER=PREPROCESSOR_TEAM"
+    )
+    print(
+        "PREPROCESSOR_SHADOW_QUALITY_GATE=SUCCESS"
+    )
+
+    return 0
 
 
 def run_evidence_smoke(args) -> int:
@@ -504,12 +891,18 @@ def parse_args():
         choices=[
             "EVIDENCE_SMOKE",
             "PREPARE",
+            "QUALITY_GATE",
         ],
     )
 
     parser.add_argument(
         "--shadow-run-id",
         required=True,
+    )
+
+    parser.add_argument(
+        "--trade-date",
+        required=False,
     )
 
     return parser.parse_args()
@@ -524,6 +917,9 @@ def main() -> int:
 
         if args.action == "PREPARE":
             return run_prepare(args)
+
+        if args.action == "QUALITY_GATE":
+            return run_quality_gate(args)
 
         raise RuntimeError(
             f"UNSUPPORTED_ACTION:{args.action}"
