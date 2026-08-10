@@ -24,7 +24,7 @@ repository root 기준 상대 경로를 사용하며 cache, build 결과, creden
 | `AGENTS.md` | Preprocessor 코드와 문서 작업 규칙 |
 | `README.md` | 현재 구조 · 데이터 흐름 · 운영 AS-IS |
 | `CHANGELOG.md` | 주요 변경 이력 |
-| `db_config.py` | PostgreSQL 환경변수 loader |
+| `db_config.py` | PostgreSQL loader · Production/Shadow run mode · search_path routing |
 | `interest_get_holidays.py` | 주말 · 공휴일 확인 |
 
 ### 변경 시 확인
@@ -34,7 +34,7 @@ repository root 기준 상대 경로를 사용하며 cache, build 결과, creden
 | `AGENTS.md` | raw→feature · Step 3 · 계산 안전 규칙 |
 | `README.md` | 현재 구조 · 책임 경계 · 실행 위험 |
 | `CHANGELOG.md` | 실제 Preprocessor 변경만 기록 |
-| `db_config.py` | `INTEREST_DB_*` · password · search path |
+| `db_config.py` | `INTEREST_DB_*` · `PREPROCESSOR_RUN_MODE` · Production/Shadow search_path |
 | Holiday helper | API 실패 · 주말 · 공휴일 · cache |
 
 ## Daily Step 3 Orchestration
@@ -269,13 +269,16 @@ downstream Strategy Research와 Strategy Decision 영향을 확인한다.
 | Config loader | `db_config.py` · `get_db_config()` |
 | 환경변수 | `INTEREST_DB_*` |
 | Password | 기본값 없음 |
-| search path | `preprocessor, interest, reference, legacy, public` |
+| 실행 모드 | `PREPROCESSOR_RUN_MODE` · 기본 `PRODUCTION` |
+| Production search path | `preprocessor, interest, reference, legacy, public` |
+| Shadow search path | `preprocessor_shadow, preprocessor, interest, reference, legacy, public` |
 
 ### Schema 책임
 
 | Schema | 역할 |
 | --- | --- |
-| `preprocessor` | 분석 · 집계 feature |
+| `preprocessor` | Production 분석 · 집계 feature |
+| `preprocessor_shadow` | Candidate Shadow 임시 output · cleanup 대상 · downstream 운영 schema 아님 |
 | `interest` | Crawler raw · history |
 | `reference` | ticker · universe · 기준정보 |
 | `legacy` | 과거 호환 |
@@ -374,9 +377,18 @@ downstream Strategy Research와 Strategy Decision 영향을 확인한다.
 
 | 파일 | 역할 |
 | --- | --- |
-| `.devops/codebuild/buildspec.yml` | CodeBuild CI gate · Docker image build · 선택적 ECR Push |
-| `.github/workflows/preprocessor-codebuild.yml` | GitHub Actions trigger · CodeBuild 실행 · OIDC 인증 |
+| `.devops/codebuild/buildspec.yml` | CodeBuild CI gate · Docker image build · 조건부 ECR Push |
+| `.github/workflows/preprocessor-codebuild.yml` | Candidate build → Shadow validation → production 승인 → Promotion orchestration |
 | `.devops/scripts/container-smoke.py` | Container import smoke test · `run()` 미호출 |
+
+### Shadow Control Runner
+
+| 파일 | 역할 |
+| --- | --- |
+| `.devops/shadow-control/preprocessor_shadow_control.py` | Prepare · Quality Gate · Cleanup · Verify Cleanup · Evidence |
+| `.devops/shadow-control/Dockerfile` | Shadow Control Runner 이미지 |
+| `.devops/shadow-control/requirements.txt` | boto3 · psycopg2 의존성 |
+| `.devops/shadow-control/tests/test_shadow_control.py` | Control Runner 순수 계약 test |
 
 ### 변경 시 확인
 
@@ -384,11 +396,17 @@ downstream Strategy Research와 Strategy Decision 영향을 확인한다.
 | --- | --- |
 | CI gate | Python Compile · Unit Test · Static Analysis · Container Smoke Test |
 | Image | Git SHA 기반 Tag · ECR Digest 고정 |
-| Push | 선택적 · 수동 실행 입력 제어 |
+| Push | main push 자동 · `workflow_dispatch` 입력 제어 |
 | 인증 | GitHub OIDC · Repository Variable Role ARN |
-| 배포 | 신규 ECS Task Definition Revision · Step Functions 참조 전환 |
+| Shadow 검증 | Candidate Task Definition을 Shadow에서 실행 · Quality Gate · Cleanup |
+| 승인 | GitHub `production` Environment manual approval |
+| 배포 | Shadow-tested 동일 Candidate Task Definition을 Step 3에 Promotion |
 
-repository에는 위 DevOps wrapper와 `Dockerfile`이 확인되며 shell · PowerShell · batch wrapper는 없다.
+repository에는 위 DevOps wrapper, Shadow Control Runner와 `Dockerfile`이 확인되며 shell · PowerShell · batch wrapper는 없다.
+
+Shadow Control Runner 상세 로직은 Prepare baseline, Quality Gate, Cleanup(CONTINUE IDENTITY), Verify Cleanup(READ_ONLY)과 S3 Evidence 기록으로 구성된다.
+
+전체 Shadow State Machine 정의, 실제 ARN과 S3 Evidence 상세는 port-devops 저장소 범위다.
 
 실제 AWS 상태를 repository 파일만으로 확정하지 않는다.
 

@@ -24,6 +24,9 @@ Crawler가 적재한 raw/history 데이터를 읽어 뉴스, 리서치, 가격, 
 | Registry | ECR |
 | Runtime | ECS Fargate RunTask |
 | 운영 연결 | Step Functions `Step3_RunPreprocessor` |
+| 실행 모드 | Production 기본 · Shadow 검증용 (`PREPROCESSOR_RUN_MODE`) |
+| 배포 파이프라인 | main push → Candidate build → Data Shadow → 승인 → Promotion |
+| Production 활성화 | GitHub production 승인 후 동일 Candidate Artifact |
 | 활성화 방식 | Task Definition Revision 고정 참조 |
 | Rollback | 이전 Revision 복구 |
 | 배포 기준 | Git SHA Tag + Image Digest |
@@ -312,21 +315,28 @@ raw가 비어 있거나 최신성이 부족한 경우 정상 0건과 입력 장�
 | Config loader | `db_config.py` · `get_db_config()` |
 | 환경변수 | `INTEREST_DB_*` |
 | Password | 기본값 없음 |
-| search path | `preprocessor, interest, reference, legacy, public` |
+| 실행 모드 | `PREPROCESSOR_RUN_MODE` · 기본 `PRODUCTION` |
+| Production search path | `preprocessor, interest, reference, legacy, public` |
+| Shadow search path | `preprocessor_shadow, preprocessor, interest, reference, legacy, public` |
 
 운영 환경에서는 Preprocessor 전용 DB user를 사용한다.
 
 문서의 `postgres` 기본값을 운영 권한 기준으로 해석하지 않는다.
 
+Shadow 실행은 `PREPROCESSOR_RUN_MODE=SHADOW`로 선택하며, write는 `preprocessor_shadow`로 향한다.
+
 ### Schema 책임
 
 | Schema | 역할 |
 | --- | --- |
-| `preprocessor` | 분석 · 집계 feature |
+| `preprocessor` | Production 분석 · 집계 feature |
+| `preprocessor_shadow` | Candidate Shadow 임시 output · cleanup 대상 |
 | `interest` | Crawler raw · history |
 | `reference` | ticker · universe · 기준정보 |
 | `legacy` | 과거 호환 |
 | `public` | fallback search path |
+
+`preprocessor_shadow`는 downstream 운영 schema가 아니라 Candidate 검증용 격리 output이다.
 
 Preprocessor는 `research`, `decision`, `execution` 결과를 직접 생성하지 않는다.
 
@@ -403,7 +413,7 @@ Preprocessor는 AWS Paper Daily Step 3에서 ECS Fargate RunTask로 실행되며
 
 배포·실행 흐름은 아래와 같다.
 
-GitHub main → GitHub Actions → GitHub OIDC → CodeBuild → Docker Build → ECR → ECS Task Definition Revision → Step Functions Step 3
+main push → GitHub Actions → GitHub OIDC → CodeBuild(CI gate + Docker Build) → ECR Candidate image → digest-pinned Candidate Task Definition → Data Shadow 검증 → GitHub production 승인 → 동일 Candidate Task Definition을 Step 3에 Promotion
 
 실제 cluster, task definition ARN, image URI, subnet과 security group은 외부 운영 사실이다.
 
@@ -431,11 +441,13 @@ GitHub Actions가 AWS CodeBuild를 실행하고, CodeBuild가 CI gate와 Docker 
 | Static Analysis | ruff 기반 |
 | Container Smoke Test | import only · `run()` 미호출 |
 | Docker Build | 컨테이너 이미지 빌드 |
-| ECR Push | 선택적 · 수동 실행 입력으로 제어 |
+| ECR Push | main push 자동 · `workflow_dispatch`는 입력으로 제어 |
 | 인증 | GitHub OIDC · Preprocessor 전용 Role |
 | Role 전달 | Repository Variable 기반 Role ARN |
 
-- GitHub Actions workflow는 수동 실행 입력으로 ECR Push 여부를 제어한다.
+- main push는 Candidate image publish를 자동으로 수행한다.
+- `workflow_dispatch` 보조 경로는 `push_image` 입력으로 publish 여부를 제어하며 기본값은 `true`다.
+- Candidate build/publish와 Production activation은 분리한다.
 - 각 검증은 실제 운영 DB DML이나 Holiday API 호출 없이 격리된 상태로 수행한다.
 - Container Smoke Test는 module import만 수행하고 `run()`을 호출하지 않는다.
 
@@ -450,6 +462,39 @@ GitHub Actions가 AWS CodeBuild를 실행하고, CodeBuild가 CI gate와 Docker 
 - Rollback 상태에서 신규 Revision 참조가 남지 않았는지 확인한다.
 - 검증 후 신규 Revision으로 재승격할 수 있다.
 - 실행 중인 State Machine execution이 있으면 정의 전환을 중단한다.
+
+## Data Shadow와 Production Promotion
+
+Candidate 이미지를 Production에 활성화하기 전에 별도 Data Shadow 검증을 수행한다.
+
+Shadow 검증은 Production preprocessor를 Champion으로, `preprocessor_shadow`를 Challenger로 둔다.
+
+| 항목 | 값 |
+| --- | --- |
+| 실행 모드 | `PREPROCESSOR_RUN_MODE` (`PRODUCTION` · `SHADOW`) |
+| Shadow write | `preprocessor_shadow` schema 격리 |
+| 입력 | 동일 Production Raw · Reference |
+| Shadow Identity | `PREPROCESSOR_SHADOW_RUN_ID` (DevOps Evidence Identity) |
+| Quality Gate 범위 | Candidate 실행 · Shadow output · Trade Date core output |
+| 무결성 | Production 변경 0건 · Reference seed integrity |
+| 격리 | Schema · sequence isolation contract |
+| Cleanup | Shadow 실행 결과 제거 · residual 0 · Production DML 금지 |
+| 값 품질 비교 | `value_equality_gate = NOT_APPLICABLE` |
+| Promotion 승인 | GitHub `production` Environment manual approval |
+| Promotion 대상 | Shadow-tested 동일 Candidate Task Definition |
+
+핵심 계약:
+
+- Shadow validation은 Production Daily orchestration과 분리된 별도 실행 경계다.
+- DevOps Quality Gate는 Candidate feature 값이 Production과 동일한지를 요구하지 않는다.
+- Feature 값 품질과 허용 범위는 Preprocessor 팀 책임이며 향후 differential 비교로 확장할 수 있다.
+- Cleanup은 Quality Gate PASS가 아니라 유효한 Prepare Evidence 기준으로 수행하며 PASS·FAIL 모두 공통 Cleanup으로 수렴한다.
+- Cleanup · Verify Cleanup · Production Integrity 완료 전에는 Promotion을 하지 않는다.
+- Shadow PASS와 GitHub production 승인 이전에는 Promotion을 하지 않는다.
+- 승인 이후 image rebuild와 Task Definition 재등록을 하지 않는다.
+- Shadow validation 자체는 자동 Production Promotion을 수행하지 않는다.
+
+전체 Shadow State Machine 정의, IAM Policy, 실제 ARN과 S3 Evidence 상세는 port-devops 저장소에서 관리한다.
 
 ## 실행
 

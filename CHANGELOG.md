@@ -13,6 +13,69 @@ port-interest-preprocessor 코드와 문서의 주요 변경 이력을 기록한
 | 실행 기록 | 실제 수행한 검증만 기록 |
 | 민감정보 | credential · host · ARN · command id 원문 금지 |
 
+## 2026-08-10 — Preprocessor Data Shadow와 승인 기반 Promotion
+
+### Added
+
+| 항목 | 값 |
+| --- | --- |
+| 실행 모드 | `db_config.py` Production/Shadow run mode |
+| Shadow routing | `preprocessor_shadow` search_path 계약 |
+| Shadow Control Runner | `.devops/shadow-control/` Prepare · Quality Gate · Cleanup · Verify Cleanup · Evidence |
+| Data Shadow Quality Gate | Candidate 실행 · Shadow output · Production integrity 검증 |
+| Cleanup / Verify Cleanup | Shadow 결과 제거 · residual 0 · Production DML 금지 |
+| Shadow orchestration | 별도 Preprocessor Shadow validation State Machine |
+| Production 승인 Gate | GitHub `production` Environment manual approval |
+| 배포 파이프라인 | push 기반 Candidate → Shadow → Approval → Promotion |
+
+### Changed
+
+| 항목 | 값 |
+| --- | --- |
+| GitHub Actions | main push 기반 Candidate pipeline으로 확장 |
+| Candidate Task Definition | digest-pinned image로 등록 |
+| Production 활성화 | manual approval 이후로 분리 |
+| OIDC trust context | main branch CI와 `production` Environment promotion으로 확장 |
+| Step 3 promotion | Shadow-tested 동일 Candidate Artifact 기준으로 변경 |
+
+### Fixed
+
+| 항목 | 값 |
+| --- | --- |
+| Cleanup 의존성 | Quality Gate PASS 의존 제거 · Prepare Evidence 기준으로 변경 |
+| Sequence cleanup | RESTART IDENTITY 대신 CONTINUE IDENTITY 적용 |
+| Promotion OIDC | `production` Environment subject 불일치 trust 조건 수정 |
+
+### Security
+
+| 항목 | 결과 |
+| --- | --- |
+| Production Schema DML | 금지 |
+| Shadow schema | 물리 격리 |
+| 인증 | GitHub OIDC · 장기 AWS Access Key 없음 |
+| Production 활성화 | manual approval 필수 |
+| 승인 후 rebuild · reregister | 금지 |
+| account · ARN · credential 원문 | 문서 신규 기록 없음 |
+
+### Verification
+
+| 항목 | 결과 |
+| --- | --- |
+| Shadow DB routing contract test | 성공 |
+| Shadow Control Runner test | 성공 |
+| Prepare | 성공 |
+| Candidate Shadow ECS 실행 | 성공 |
+| Quality Gate | PASS |
+| Cleanup | PASS |
+| Verify Cleanup | PASS (READ_ONLY) |
+| Production changed table | 0 |
+| Shadow residual | 0 |
+| Production Integrity | PASS |
+| Shadow E2E | SUCCEEDED |
+| GitHub production approval | 성공 |
+| 동일 Candidate Artifact Promotion | 성공 |
+| FAIL-path 강제 E2E | 미수행 |
+
 ## 2026-07-30 — Preprocessor DevOps 구현
 
 ### Added

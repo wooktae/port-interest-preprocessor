@@ -478,21 +478,32 @@ Preprocessor 안에 크롤링, 전략 판단, 주문 생성과 주문 제출 로
 | Config loader | `db_config.py`의 `get_db_config()` |
 | 환경변수 | `INTEREST_DB_*` |
 | Password | 기본값 없음 |
-| search path | `preprocessor, interest, reference, legacy, public` |
+| 실행 모드 | `PREPROCESSOR_RUN_MODE` · 기본 `PRODUCTION` |
+| Production search path | `preprocessor, interest, reference, legacy, public` |
+| Shadow search path | `preprocessor_shadow, preprocessor, interest, reference, legacy, public` |
 
 실제 운영 환경에서는 Preprocessor 전용 DB user를 사용한다.
 
 `postgres` 기본값이 코드나 과거 문서에 있더라도 운영 권한 기준으로 해석하지 않는다.
 
+`db_config.py`의 Production/Shadow run mode와 search_path routing 계약을 임의로 제거하지 않는다.
+
+Shadow search_path 순서를 임의로 변경하지 않는다.
+
 ### 7.2 Schema 책임
 
 | Schema | 역할 |
 | --- | --- |
-| `preprocessor` | 분석 · 집계 feature |
+| `preprocessor` | Production 분석 · 집계 feature |
+| `preprocessor_shadow` | Candidate Shadow 임시 output · cleanup 대상 |
 | `interest` | Crawler raw · history |
 | `reference` | ticker · universe · 기준정보 |
 | `legacy` | 과거 호환 |
 | `public` | fallback search path |
+
+Shadow 실행에서 Production `preprocessor` DML을 수행하지 않는다.
+
+`preprocessor_shadow`는 downstream 운영 schema가 아니라 Candidate 검증용 격리 output이다.
 
 Preprocessor는 `research`, `decision`, `execution`의 결과를 직접 생성하지 않는다.
 
@@ -604,19 +615,21 @@ Preprocessor는 AWS Paper Daily Step 3에서 ECS Fargate RunTask로 실행되며
 | Rollback | Step Functions 참조를 이전 Task Definition Revision으로 복구 |
 | 재승격 | 검증된 신규 Revision을 다시 활성화 |
 
-- 배포 철학은 Data Shadow 또는 Dry Run 검증을 우선하고, 운영 DB write 활성화는 별도 승인 대상으로 취급한다.
-- 현재 완료된 것은 CI, ECR Build/Push, ECS Revision 전환, Rollback과 End-to-End 정합성 검증이다.
-- Data Shadow 실제 실행 완료로 기록하지 않는다.
+- 배포 철학은 Candidate build/publish와 Production activation을 분리하는 것이다.
+- main push는 Candidate image를 자동 publish하지만 곧바로 Production 활성화를 의미하지 않는다.
+- Candidate는 Data Shadow 검증과 GitHub production manual approval을 통과한 뒤에만 Promotion한다.
+- 현재 완료된 것은 CI, Candidate build/publish, Data Shadow 검증(PASS E2E), GitHub 승인 기반 Promotion, Rollback과 End-to-End 정합성 검증이다.
+- FAIL-path 강제 E2E는 수행하지 않았으므로 완료로 기록하지 않는다.
 
 ### 10.3 GitHub OIDC 규칙
 
 - GitHub Actions는 장기 AWS Access Key를 사용하지 않는다.
 - AWS 인증은 GitHub OIDC를 사용한다.
 - Repository별 전용 IAM Role을 사용한다.
-- Trust Policy는 해당 Repository의 main 브랜치로 제한한다.
-- Repository ID가 포함된 immutable OIDC subject 형식을 현재 운영 기준으로 사용한다.
+- Trust는 Repository와 실행 context를 제한하며, main branch CI와 `production` Environment promotion을 각각 허용한다.
+- immutable repository identity 기반 subject 제한 원칙을 유지한다.
 - Role ARN은 GitHub Repository Variable로 전달한다.
-- OIDC Role에는 해당 CodeBuild 프로젝트 실행과 결과 조회에 필요한 최소 권한만 부여한다.
+- OIDC Role에는 필요한 최소 권한만 부여한다.
 - 다른 Repository의 OIDC Role을 재사용하지 않는다.
 - 실제 Role ARN, owner ID와 repository ID 숫자는 기록하지 않는다.
 
@@ -634,6 +647,34 @@ Preprocessor는 AWS Paper Daily Step 3에서 ECS Fargate RunTask로 실행되며
 | Rollback | 이후 신규 Revision 참조 0건 확인 |
 | 재승격 | 활성 Revision과 Digest 재확인 |
 | 전환 시점 | 실행 중인 Step Functions execution이 없을 때 정의 전환 |
+
+### 10.5 Data Shadow와 Promotion 규칙
+
+Candidate를 Production에 활성화하기 전 Data Shadow 검증을 거친다.
+
+| 항목 | 값 |
+| --- | --- |
+| Champion | Production `preprocessor` |
+| Challenger | `preprocessor_shadow` |
+| 입력 | 동일 Production Raw · Reference |
+| Quality Gate 값 비교 | `value_equality_gate = NOT_APPLICABLE` |
+| Promotion 승인 | GitHub `production` Environment manual approval |
+| Promotion 대상 | Shadow-tested 동일 Candidate Task Definition |
+
+Kiro 작업 시 아래 규칙을 지킨다.
+
+- Production/Shadow run mode 계약과 Shadow search_path 순서를 임의로 제거·변경하지 않는다.
+- Shadow 실행에서 Production `preprocessor` DML을 수행하지 않는다.
+- Shadow 개념과 필터 책임을 Research·Decision 등 downstream에 전파하지 않는다.
+- Shadow validation을 Production Daily orchestration에 직접 합치지 않는다.
+- Cleanup · Verify Cleanup · Production Integrity를 Promotion Gate로 유지한다.
+- feature 값 equality를 DevOps 필수 Gate로 임의 승격하지 않는다.
+- Candidate build/publish와 Production activation을 분리한다.
+- `production` Environment manual approval을 우회하지 않는다.
+- 승인 이후 image rebuild와 Task Definition 재등록을 하지 않는다.
+- Shadow-tested 동일 Artifact만 Promotion한다.
+
+전체 Shadow State Machine 정의, IAM Policy, 실제 ARN과 S3 Evidence 상세는 port-devops 저장소 범위이며 이 저장소 문서에 복제하지 않는다.
 
 ## 11. 실행 제한
 
