@@ -373,3 +373,38 @@ def test_cleanup_cli_action(monkeypatch):
 
     assert args.action == "CLEANUP"
     assert args.shadow_run_id == "run-123"
+
+def test_verify_cleanup_cli_action(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "shadow-control",
+            "--action",
+            "VERIFY_CLEANUP",
+            "--shadow-run-id",
+            "run-123",
+        ],
+    )
+
+    args = MODULE.parse_args()
+
+    assert args.action == "VERIFY_CLEANUP"
+    assert args.shadow_run_id == "run-123"
+
+
+def test_verify_cleanup_is_distinct_action():
+    assert MODULE.run_verify_cleanup is not MODULE.run_cleanup
+
+
+def test_cleanup_tables_and_references_cover_expected():
+    assert (
+        set(MODULE.CLEANUP_TABLES)
+        | set(MODULE.REFERENCE_TABLES)
+    ) == set(MODULE.EXPECTED_TABLES)
+
+
+def test_verify_cleanup_expected_table_count():
+    assert len(MODULE.EXPECTED_TABLES) == 18
+    assert len(MODULE.CLEANUP_TABLES) == 15
+    assert len(MODULE.REFERENCE_TABLES) == 3

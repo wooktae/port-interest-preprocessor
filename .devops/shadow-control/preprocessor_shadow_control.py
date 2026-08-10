@@ -659,6 +659,343 @@ def cleanup_shadow_tables(
     cursor.execute(sql)
 
 
+def run_verify_cleanup(args) -> int:
+    shadow_run_id = args.shadow_run_id.strip()
+
+    if not shadow_run_id:
+        raise RuntimeError(
+            "SHADOW_RUN_ID_REQUIRED"
+        )
+
+    bucket = require_env(
+        "PREPROCESSOR_SHADOW_EVIDENCE_BUCKET"
+    )
+
+    prefix = os.getenv(
+        "PREPROCESSOR_SHADOW_EVIDENCE_PREFIX",
+        DEFAULT_PREFIX,
+    ).strip()
+
+    s3 = build_s3_client()
+
+    prepare_key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="prepare",
+    )
+
+    cleanup_key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="cleanup",
+    )
+
+    prepare = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=prepare_key,
+    )
+
+    cleanup = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=cleanup_key,
+    )
+
+    if prepare.get("action") != "PREPARE":
+        raise RuntimeError(
+            "PREPARE_EVIDENCE_ACTION_INVALID"
+        )
+
+    if prepare.get("status") != "PASS":
+        raise RuntimeError(
+            "PREPARE_EVIDENCE_NOT_PASS"
+        )
+
+    production_baseline = (
+        prepare.get("production_baseline")
+    )
+
+    if not isinstance(
+        production_baseline,
+        dict,
+    ):
+        raise RuntimeError(
+            "PRODUCTION_BASELINE_MISSING"
+        )
+
+    if cleanup.get("action") != "CLEANUP":
+        raise RuntimeError(
+            "CLEANUP_EVIDENCE_ACTION_INVALID"
+        )
+
+    if cleanup.get("status") != "PASS":
+        raise RuntimeError(
+            "CLEANUP_EVIDENCE_NOT_PASS"
+        )
+
+    print("PREPARE_EVIDENCE=PASS")
+    print("CLEANUP_EVIDENCE=PASS")
+
+    connection = build_db_connection()
+
+    try:
+        connection.set_session(
+            readonly=True,
+            autocommit=False,
+        )
+
+        with connection.cursor() as cursor:
+            shadow_tables = fetch_table_names(
+                cursor,
+                SHADOW_SCHEMA,
+            )
+
+            expected_tables = set(
+                EXPECTED_TABLES
+            )
+
+            actual_tables = set(
+                shadow_tables
+            )
+
+            missing_tables = sorted(
+                expected_tables - actual_tables
+            )
+
+            unexpected_tables = sorted(
+                actual_tables - expected_tables
+            )
+
+            if missing_tables:
+                raise RuntimeError(
+                    "SHADOW_TABLES_MISSING:"
+                    + ",".join(missing_tables)
+                )
+
+            if unexpected_tables:
+                raise RuntimeError(
+                    "SHADOW_TABLES_UNEXPECTED:"
+                    + ",".join(unexpected_tables)
+                )
+
+            print(
+                "SHADOW_TABLE_COUNT="
+                f"{len(actual_tables)}"
+            )
+            print(
+                "SHADOW_TABLE_STRUCTURE=PASS"
+            )
+
+            residual_counts = fetch_table_counts(
+                cursor,
+                schema=SHADOW_SCHEMA,
+                tables=CLEANUP_TABLES,
+            )
+
+            residual_tables = sorted(
+                table
+                for table, count
+                in residual_counts.items()
+                if int(count) != 0
+            )
+
+            print(
+                "SHADOW_RESIDUAL_TABLE_COUNT="
+                f"{len(residual_tables)}"
+            )
+
+            if residual_tables:
+                raise RuntimeError(
+                    "SHADOW_CLEANUP_RESIDUAL:"
+                    + ",".join(residual_tables)
+                )
+
+            print(
+                "SHADOW_RESIDUAL_ZERO=PASS"
+            )
+
+            reference_production = (
+                fetch_table_counts(
+                    cursor,
+                    schema=PRODUCTION_SCHEMA,
+                    tables=REFERENCE_TABLES,
+                )
+            )
+
+            reference_shadow = (
+                fetch_table_counts(
+                    cursor,
+                    schema=SHADOW_SCHEMA,
+                    tables=REFERENCE_TABLES,
+                )
+            )
+
+            if (
+                reference_shadow
+                != reference_production
+            ):
+                raise RuntimeError(
+                    "REFERENCE_SEED_INTEGRITY_FAILED"
+                )
+
+            print(
+                "REFERENCE_SEED_INTEGRITY=PASS"
+            )
+
+            production_current = (
+                fetch_table_counts(
+                    cursor,
+                    schema=PRODUCTION_SCHEMA,
+                    tables=EXPECTED_TABLES,
+                )
+            )
+
+            changed_tables = sorted(
+                table
+                for table in EXPECTED_TABLES
+                if (
+                    int(production_current[table])
+                    != int(
+                        production_baseline[table]
+                    )
+                )
+            )
+
+            print(
+                "PRODUCTION_CHANGED_TABLE_COUNT="
+                f"{len(changed_tables)}"
+            )
+
+            if changed_tables:
+                raise RuntimeError(
+                    "PRODUCTION_INTEGRITY_FAILED:"
+                    + ",".join(changed_tables)
+                )
+
+            print(
+                "PRODUCTION_INTEGRITY=PASS"
+            )
+
+            shadow_sequence_count = (
+                fetch_sequence_count(
+                    cursor,
+                    SHADOW_SCHEMA,
+                )
+            )
+
+            print(
+                "SHADOW_SEQUENCE_COUNT="
+                f"{shadow_sequence_count}"
+            )
+
+            if (
+                shadow_sequence_count
+                != EXPECTED_SHADOW_SEQUENCE_COUNT
+            ):
+                raise RuntimeError(
+                    "SHADOW_SEQUENCE_COUNT_MISMATCH"
+                )
+
+            leaks = (
+                fetch_production_sequence_leaks(
+                    cursor
+                )
+            )
+
+            print(
+                "PRODUCTION_SEQUENCE_LEAK_COUNT="
+                f"{len(leaks)}"
+            )
+
+            if leaks:
+                raise RuntimeError(
+                    "PRODUCTION_SEQUENCE_LEAK_DETECTED"
+                )
+
+            print(
+                "SEQUENCE_CONTRACT=PASS"
+            )
+
+        connection.rollback()
+
+    finally:
+        connection.close()
+
+    evidence = build_evidence(
+        action="VERIFY_CLEANUP",
+        shadow_run_id=shadow_run_id,
+        status="PASS",
+    )
+
+    evidence.update(
+        {
+            "shadow_table_count": (
+                len(actual_tables)
+            ),
+            "shadow_table_structure": "PASS",
+            "cleanup_table_count": (
+                len(CLEANUP_TABLES)
+            ),
+            "residual_table_count": 0,
+            "residual_counts": residual_counts,
+            "reference_seed_integrity": "PASS",
+            "reference_shadow": reference_shadow,
+            "production_integrity": "PASS",
+            "production_changed_table_count": 0,
+            "shadow_sequence_count": (
+                shadow_sequence_count
+            ),
+            "production_sequence_leak_count": 0,
+            "db_mode": "READ_ONLY",
+        }
+    )
+
+    key = evidence_key(
+        prefix=prefix,
+        shadow_run_id=shadow_run_id,
+        name="verify-cleanup",
+    )
+
+    version_id = put_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=key,
+        payload=evidence,
+    )
+
+    print(
+        "VERIFY_CLEANUP_EVIDENCE_PUT=PASS"
+    )
+    print(
+        f"VERIFY_CLEANUP_EVIDENCE_KEY={key}"
+    )
+    print(
+        "VERIFY_CLEANUP_EVIDENCE_VERSION_ID="
+        f"{version_id or ''}"
+    )
+
+    loaded = get_evidence(
+        s3=s3,
+        bucket=bucket,
+        key=key,
+    )
+
+    if loaded != evidence:
+        raise RuntimeError(
+            "VERIFY_CLEANUP_EVIDENCE_MISMATCH"
+        )
+
+    print(
+        "VERIFY_CLEANUP_EVIDENCE_VERIFY=PASS"
+    )
+    print(
+        "PREPROCESSOR_SHADOW_VERIFY_CLEANUP=SUCCESS"
+    )
+
+    return 0
+
+
 def run_cleanup(args) -> int:
     shadow_run_id = args.shadow_run_id.strip()
 
@@ -1123,6 +1460,7 @@ def parse_args():
             "PREPARE",
             "QUALITY_GATE",
             "CLEANUP",
+            "VERIFY_CLEANUP",
         ],
     )
 
@@ -1154,6 +1492,9 @@ def main() -> int:
 
         if args.action == "CLEANUP":
             return run_cleanup(args)
+
+        if args.action == "VERIFY_CLEANUP":
+            return run_verify_cleanup(args)
 
         raise RuntimeError(
             f"UNSUPPORTED_ACTION:{args.action}"
