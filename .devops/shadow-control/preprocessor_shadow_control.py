@@ -277,7 +277,7 @@ def fetch_trade_date_counts(
             f'''
             SELECT COUNT(*)
             FROM "{schema}"."{table}"
-            WHERE trade_date = %s
+            WHERE date = %s
             ''',
             (trade_date,),
         )
