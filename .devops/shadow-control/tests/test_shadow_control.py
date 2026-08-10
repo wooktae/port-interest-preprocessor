@@ -327,7 +327,7 @@ def test_cleanup_sql_contract():
     )
 
     assert (
-        "RESTART IDENTITY"
+        "CONTINUE IDENTITY"
         in cursor.sql
     )
 

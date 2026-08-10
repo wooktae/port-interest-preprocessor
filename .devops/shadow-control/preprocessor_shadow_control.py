@@ -645,7 +645,7 @@ def cleanup_shadow_tables(
 
     sql = (
         f"TRUNCATE TABLE {qualified} "
-        "RESTART IDENTITY"
+        "CONTINUE IDENTITY"
     )
 
     if (
