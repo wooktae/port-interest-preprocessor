@@ -33,6 +33,7 @@ env:
   APP_CONTAINER: interest-preprocessor
   SHADOW_STATE_MACHINE_ARN: arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-preprocessor-shadow-validation
   OPERATING_STATE_MACHINE_ARN: arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-11-safe
+  OPERATING_STATE_MACHINE_SECONDARY_ARN: arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-17-approval
 
 jobs:
   build_candidate:
@@ -42,6 +43,7 @@ jobs:
       publish: ${{ steps.mode.outputs.publish }}
       candidate_taskdef_arn: ${{ steps.candidate.outputs.candidate_taskdef_arn }}
       operating_taskdef_before: ${{ steps.candidate.outputs.operating_taskdef_before }}
+      operating_taskdef_secondary_before: ${{ steps.candidate.outputs.operating_taskdef_secondary_before }}
       image_digest: ${{ steps.candidate.outputs.image_digest }}
       trade_date: ${{ steps.context.outputs.trade_date }}
       shadow_run_id: ${{ steps.context.outputs.shadow_run_id }}
@@ -196,6 +198,15 @@ jobs:
 
           echo "OPERATING_TASKDEF_BEFORE=${OPERATING_TASKDEF}"
 
+          aws stepfunctions describe-state-machine \
+            --state-machine-arn "${OPERATING_STATE_MACHINE_SECONDARY_ARN}" \
+            --query definition \
+            --output text > operating-secondary-definition.json
+
+          OPERATING_TASKDEF_SECONDARY="$(python -c 'import json; d=json.load(open("operating-secondary-definition.json", encoding="utf-8")); print(d["States"]["Step3_RunPreprocessor"]["Parameters"]["TaskDefinition"])')"
+
+          echo "OPERATING_TASKDEF_SECONDARY_BEFORE=${OPERATING_TASKDEF_SECONDARY}"
+
           aws ecs describe-task-definition \
             --task-definition "${OPERATING_TASKDEF}" \
             --query taskDefinition \
@@ -242,6 +253,7 @@ jobs:
 
           echo "candidate_taskdef_arn=${CANDIDATE_TASKDEF_ARN}" >> "${GITHUB_OUTPUT}"
           echo "operating_taskdef_before=${OPERATING_TASKDEF}" >> "${GITHUB_OUTPUT}"
+          echo "operating_taskdef_secondary_before=${OPERATING_TASKDEF_SECONDARY}" >> "${GITHUB_OUTPUT}"
           echo "image_digest=${IMAGE_DIGEST}" >> "${GITHUB_OUTPUT}"
 
   shadow_validation:
@@ -346,6 +358,7 @@ jobs:
         env:
           CANDIDATE_TASKDEF_ARN: ${{ needs.build_candidate.outputs.candidate_taskdef_arn }}
           OPERATING_TASKDEF_BEFORE: ${{ needs.build_candidate.outputs.operating_taskdef_before }}
+          OPERATING_TASKDEF_SECONDARY_BEFORE: ${{ needs.build_candidate.outputs.operating_taskdef_secondary_before }}
           IMAGE_DIGEST: ${{ needs.build_candidate.outputs.image_digest }}
         run: |
           set -euo pipefail
@@ -353,81 +366,92 @@ jobs:
           echo "CANDIDATE_TASKDEF_ARN=${CANDIDATE_TASKDEF_ARN}"
           echo "TESTED_IMAGE_DIGEST=${IMAGE_DIGEST}"
 
-          aws stepfunctions describe-state-machine \
-            --state-machine-arn "${OPERATING_STATE_MACHINE_ARN}" \
-            --query definition \
-            --output text > operating-live.json
+          PRIMARY_ARN="${OPERATING_STATE_MACHINE_ARN}"
+          SECONDARY_ARN="${OPERATING_STATE_MACHINE_SECONDARY_ARN}"
 
-          LIVE_TASKDEF="$(
-            python - <<'PY'
-          import json
+          verify_baseline() {
+            local arn="$1"
+            local expected="$2"
+            local file="$3"
 
-          with open("operating-live.json", encoding="utf-8") as f:
-              definition = json.load(f)
-
-          print(
-              definition["States"]["Step3_RunPreprocessor"]
-              ["Parameters"]["TaskDefinition"]
-          )
-          PY
-          )"
-
-          echo "LIVE_TASKDEF_BEFORE=${LIVE_TASKDEF}"
-          echo "EXPECTED_TASKDEF_BEFORE=${OPERATING_TASKDEF_BEFORE}"
-
-          if [[ "${LIVE_TASKDEF}" != "${OPERATING_TASKDEF_BEFORE}" ]]; then
-            echo "OPERATING_TASKDEF_CHANGED_DURING_APPROVAL"
-            exit 1
-          fi
-
-          python - <<'PY'
-          import json
-          import os
-
-          with open("operating-live.json", encoding="utf-8") as f:
-              definition = json.load(f)
-
-          definition["States"]["Step3_RunPreprocessor"][
-              "Parameters"
-          ]["TaskDefinition"] = os.environ["CANDIDATE_TASKDEF_ARN"]
-
-          with open(
-              "operating-promoted.json",
-              "w",
-              encoding="utf-8",
-          ) as f:
-              json.dump(
-                  definition,
-                  f,
-                  ensure_ascii=False,
-                  separators=(",", ":"),
-              )
-          PY
-
-          aws stepfunctions update-state-machine \
-            --state-machine-arn "${OPERATING_STATE_MACHINE_ARN}" \
-            --definition file://operating-promoted.json \
-            > promotion-result.json
-
-          PROMOTED_TASKDEF="$(
             aws stepfunctions describe-state-machine \
-              --state-machine-arn "${OPERATING_STATE_MACHINE_ARN}" \
+              --state-machine-arn "${arn}" \
               --query definition \
-              --output text |
-            python -c '
-          import json,sys
-          d=json.load(sys.stdin)
-          print(d["States"]["Step3_RunPreprocessor"]["Parameters"]["TaskDefinition"])
-          '
-          )"
+              --output text > "${file}"
 
-          echo "PROMOTED_TASKDEF=${PROMOTED_TASKDEF}"
+            local live
+            live="$(python -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(d["States"]["Step3_RunPreprocessor"]["Parameters"]["TaskDefinition"])' "${file}")"
 
-          if [[ "${PROMOTED_TASKDEF}" != "${CANDIDATE_TASKDEF_ARN}" ]]; then
-            echo "PROMOTION_VERIFY_FAILED"
-            exit 1
-          fi
+            echo "STATE_MACHINE_ARN=${arn}"
+            echo "LIVE_TASKDEF_BEFORE=${live}"
+            echo "EXPECTED_TASKDEF_BEFORE=${expected}"
 
+            if [[ "${live}" != "${expected}" ]]; then
+              echo "OPERATING_TASKDEF_CHANGED_DURING_APPROVAL"
+              exit 1
+            fi
+          }
+
+          echo "=== VERIFY ALL ACTIVATION BASELINES ==="
+
+          verify_baseline \
+            "${PRIMARY_ARN}" \
+            "${OPERATING_TASKDEF_BEFORE}" \
+            "operating-primary-live.json"
+
+          verify_baseline \
+            "${SECONDARY_ARN}" \
+            "${OPERATING_TASKDEF_SECONDARY_BEFORE}" \
+            "operating-secondary-live.json"
+
+          echo "ACTIVATION_SCOPE_STALE_GUARD=PASS"
+
+          promote_state_machine() {
+            local arn="$1"
+            local source_file="$2"
+            local promoted_file="$3"
+
+            python -c 'import json,os,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); d["States"]["Step3_RunPreprocessor"]["Parameters"]["TaskDefinition"]=os.environ["CANDIDATE_TASKDEF_ARN"]; json.dump(d, open(sys.argv[2], "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))' "${source_file}" "${promoted_file}"
+
+            aws stepfunctions update-state-machine \
+              --state-machine-arn "${arn}" \
+              --definition "file://${promoted_file}" \
+              > /dev/null
+          }
+
+          echo "=== PROMOTE ACTIVATION SCOPE ==="
+
+          promote_state_machine \
+            "${PRIMARY_ARN}" \
+            "operating-primary-live.json" \
+            "operating-primary-promoted.json"
+
+          promote_state_machine \
+            "${SECONDARY_ARN}" \
+            "operating-secondary-live.json" \
+            "operating-secondary-promoted.json"
+
+          verify_promoted() {
+            local arn="$1"
+            local promoted
+
+            promoted="$(aws stepfunctions describe-state-machine --state-machine-arn "${arn}" --query definition --output text | python -c 'import json,sys; d=json.load(sys.stdin); print(d["States"]["Step3_RunPreprocessor"]["Parameters"]["TaskDefinition"])')"
+
+            echo "STATE_MACHINE_ARN=${arn}"
+            echo "PROMOTED_TASKDEF=${promoted}"
+
+            if [[ "${promoted}" != "${CANDIDATE_TASKDEF_ARN}" ]]; then
+              echo "PROMOTION_VERIFY_FAILED"
+              exit 1
+            fi
+          }
+
+          echo "=== VERIFY ALL PROMOTED REFERENCES ==="
+
+          verify_promoted "${PRIMARY_ARN}"
+          verify_promoted "${SECONDARY_ARN}"
+
+          echo "ACTIVATION_SCOPE_COUNT=2"
           echo "REBUILD_AFTER_APPROVAL=NO"
           echo "REREGISTER_AFTER_APPROVAL=NO"
           echo "TESTED_ARTIFACT_EQUALS_PROMOTED_ARTIFACT=PASS"
