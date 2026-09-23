@@ -1,7 +1,7 @@
-"""시장 단위 total daily feature를 생성하는 최종 집계 스크립트.
+"""Final aggregation script that generates market-level total daily features.
 
-시장 폭, 해외지수, 매크로, 원자재, 프로그램 매매, 투자자 수급 feature를 결합한다.
-최근 영업일 계산 과정에서 휴일 API helper를 사용할 수 있으므로 운영 실행에 주의한다.
+It combines market breadth, foreign index, macro, commodity, program trading, and investor flow features.
+The latest-business-day calculation may use the holiday API helper, so take care during operational execution.
 """
 
 import psycopg2
@@ -17,13 +17,13 @@ PROCESSOR_VERSION = "7.0.0"
 
 # OUTER WEIGHTS
 FLOW_SCALE = 8
-FLOW_WEIGHT = 0.48   # 👈 살짝만 줄여
+FLOW_WEIGHT = 0.48   # 👈 reduced slightly
 
-BREADTH_WEIGHT = 0.28  # 👈 핵심 (올려)
+BREADTH_WEIGHT = 0.28  # 👈 core (increased)
 MACRO_WEIGHT = 0.10
 GLOBAL_WEIGHT = 0.03
 COMMODITY_WEIGHT = 0.05
-PROGRAM_WEIGHT = 0.06  # 👈 약간 줄여
+PROGRAM_WEIGHT = 0.06  # 👈 reduced a bit
 
 # =========================
 # FLOW INTERNAL WEIGHTS

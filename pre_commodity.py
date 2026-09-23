@@ -1,7 +1,7 @@
-"""원자재 원천 데이터를 일자 단위 시장 feature로 집계하는 스크립트.
+"""Script that aggregates commodity source data into daily market features.
 
-interest_commodity_raw에서 에너지, 금속, 인플레이션/성장 압력 지표를 계산해
-pre_commodity_daily_feature에 upsert한다.
+It computes energy, metal, and inflation/growth pressure indicators from
+interest_commodity_raw and upserts them into pre_commodity_daily_feature.
 """
 
 import psycopg2

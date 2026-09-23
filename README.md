@@ -1,42 +1,42 @@
 # port-interest-preprocessor
 
-Crawler가 적재한 raw/history 데이터를 읽어 뉴스, 리서치, 가격, 시장, 매크로, 원자재, 해외지수, 수급과 거래구조 feature를 생성하는 Python 마이크로서비스다.
+A Python microservice that reads the raw/history data loaded by the Crawler and generates News, Research, Price, Market, Macro, Commodity, Foreign Index, Flow, and market-structure Features.
 
-처리 결과는 PostgreSQL의 `preprocessor` schema에 저장되며, Strategy Research와 Strategy Decision이 후속 입력으로 사용할 수 있다.
+Processing results are stored in the `preprocessor` schema in PostgreSQL, where Strategy Research and Strategy Decision can consume them as downstream input.
 
-이 저장소의 실행 경로는 대량 DB read, delete, insert와 upsert로 이어질 수 있고 일부 단계는 외부 holiday API를 호출할 수 있으므로 정적 분석과 문서 작업을 기본값으로 한다.
+Execution paths in this repository can lead to bulk DB read, delete, insert, and upsert operations, and some stages may call an external holiday API. Static analysis and documentation work are therefore the default.
 
-## 현재 상태
+## Current State
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| 운영 성격 | AWS Paper Daily Step 3 전처리 |
-| 기본 구조 | 독립 실행형 `pre_*.py` script 중심 |
+| Operational nature | AWS Paper Daily Step 3 preprocessing |
+| Base structure | Standalone `pre_*.py` scripts |
 | Daily orchestration | `pre_daily.py` |
-| 입력 | `interest` raw/history |
-| 출력 | `preprocessor` feature |
-| 참조 | `reference` · `legacy` |
+| Input | `interest` raw/history |
+| Output | `preprocessor` feature |
+| Reference | `reference` · `legacy` |
 | downstream | Strategy Research · Strategy Decision |
-| 외부 요청 | Holiday API 가능 |
+| External requests | Holiday API possible |
 | Database | PostgreSQL `portfolio` |
 | Artifact | Docker Image |
 | Build | GitHub Actions → CodeBuild |
 | Registry | ECR |
 | Runtime | ECS Fargate RunTask |
-| 운영 연결 | Step Functions `Step3_RunPreprocessor` |
-| 실행 모드 | Production 기본 · Shadow 검증용 (`PREPROCESSOR_RUN_MODE`) |
-| 배포 파이프라인 | main push → Candidate build → Data Shadow → 승인 → Promotion |
-| Production 활성화 | GitHub production 승인 후 동일 Candidate Artifact |
-| 활성화 방식 | Task Definition Revision 고정 참조 |
-| Rollback | 이전 Revision 복구 |
-| 배포 기준 | Git SHA Tag + Image Digest |
-| 문서 기본 원칙 | DB · API 실행 없이 정적 확인 |
+| Operational link | Step Functions `Step3_RunPreprocessor` |
+| Run mode | Production default · Shadow validation (`PREPROCESSOR_RUN_MODE`) |
+| Deployment pipeline | main push → Candidate build → Data Shadow → approval → Promotion |
+| Production activation | Same Candidate Artifact after GitHub production approval |
+| Activation method | Fixed Task Definition Revision reference |
+| Rollback | Restore the previous Revision |
+| Deployment basis | Git SHA Tag + Image Digest |
+| Documentation default principle | Static review without DB · API execution |
 
-> `analysis`, `aggregator`, `feature`라는 이름이 붙은 파일도 DB 쓰기와 대량 재계산을 수행할 수 있다. 문서 검증 목적으로 실행하지 않는다.
+> Files named `analysis`, `aggregator`, or `feature` can also perform DB writes and bulk recomputation. Do not run them for documentation-validation purposes.
 
-## 기술 스택
+## Technical Stack
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
 | Language | Python |
 | Database Driver | psycopg2 · psycopg2.extras |
@@ -47,67 +47,67 @@ Crawler가 적재한 raw/history 데이터를 읽어 뉴스, 리서치, 가격, 
 | Artifact | Docker Image · ECR |
 | Build | GitHub Actions → CodeBuild |
 
-## 책임 경계
+## Responsibility Boundary
 
-### 담당 범위
+### In Scope
 
-| 영역 | 역할 |
+| Area | Role |
 | --- | --- |
-| News | 종목 매핑 · 감성 · keyword · event |
-| Agency | 투자의견 · 목표가 분석 |
-| Price | 가격 feature |
-| Market Breadth | 시장 폭 feature |
-| Macro | 매크로 daily feature |
-| Commodity | 원자재 daily feature |
-| Foreign Index | 해외지수 daily feature |
-| Flow | 투자자 수급 feature |
-| Program | 프로그램 매매 feature |
-| Short Sell | 공매도 feature |
-| Total Stock | 종목 단위 종합 feature |
-| Total Market | 시장 단위 종합 feature |
-| Persistence | `preprocessor` schema 생성 · 갱신 |
+| News | Stock mapping · sentiment · keyword · event |
+| Agency | Investment opinion · target price analysis |
+| Price | Price feature |
+| Market Breadth | Market breadth feature |
+| Macro | Macro daily feature |
+| Commodity | Commodity daily feature |
+| Foreign Index | Foreign index daily feature |
+| Flow | Investor Flow feature |
+| Program | Program Trading feature |
+| Short Sell | Short Selling feature |
+| Total Stock | Stock-level Total Feature |
+| Total Market | Market-level Total Feature |
+| Persistence | `preprocessor` schema creation · update |
 
-### 직접 담당하지 않는 범위
+### Out of Scope
 
-| 항목 | 실제 책임 영역 |
+| Item | Actual Responsibility |
 | --- | --- |
-| 외부 데이터 수집 | port-interest-crawler |
-| 전략 연구 · 백테스트 | Strategy Research |
-| 전략 판단 | Strategy Decision |
-| 주문 계획 | Strategy Execution |
-| 주문 제출 · 체결 | port-marketconnector |
-| 화면 | port-view |
-| Daily 전체 orchestration | Step Functions · Scheduler |
+| External data collection | port-interest-crawler |
+| Strategy research · backtest | Strategy Research |
+| Strategy decision | Strategy Decision |
+| Order planning | Strategy Execution |
+| Order submission · fill | port-marketconnector |
+| Views | port-view |
+| Full Daily orchestration | Step Functions · Scheduler |
 
-Preprocessor 안에 크롤링, 전략 판단, 주문 생성과 주문 제출 로직을 복제하지 않는다.
+Do not duplicate crawling, strategy decision, order creation, or order submission logic inside the Preprocessor.
 
-## 데이터 흐름
+## Data Flow
 
-| 단계 | 처리 |
+| Stage | Handling |
 | --- | --- |
-| 입력 | Crawler가 적재한 `interest` raw/history |
-| 변환 | `pre_*.py` 분석 · 계산 · 집계 |
-| 저장 | `preprocessor` feature |
-| 참조 | `reference` ticker · universe · 기준정보 |
-| 호환 | `legacy` |
-| 소비 | Strategy Research · Strategy Decision |
+| Input | `interest` raw/history loaded by the Crawler |
+| Transform | `pre_*.py` analysis · calculation · aggregation |
+| Store | `preprocessor` feature |
+| Reference | `reference` ticker · universe · reference data |
+| Compatibility | `legacy` |
+| Consume | Strategy Research · Strategy Decision |
 
-raw가 비어 있거나 최신성이 부족한 경우 정상 0건과 입력 장애를 구분해야 한다.
+When raw data is empty or lacks freshness, distinguish a normal zero-record result from an input failure.
 
-과거 최신 feature를 당일 신규 결과처럼 재사용하지 않는다.
+Do not reuse a previous latest feature as if it were a new same-day result.
 
 ## Daily Step 3
 
-`pre_daily.py`는 개별 전처리 `run()` entrypoint를 순서대로 호출하는 Daily orchestration 후보다.
+`pre_daily.py` is the Daily orchestration candidate that calls each preprocessing `run()` entrypoint in sequence.
 
-### 현재 단계 구성
+### Current Stage Composition
 
-| 순서 | 단계 |
+| Order | Stage |
 | --- | --- |
 | 1 | `pre_news_analysis.run()` |
 | 2 | `pre_news_event_detection.run()` |
 | 3 | `pre_news_daily_aggregator.run()` |
-| 4 | `pre_agency_analysis.run()` · 주석 처리 · 미실행 |
+| 4 | `pre_agency_analysis.run()` · commented out · not executed |
 | 5 | `pre_agency_daily_aggregator.run()` |
 | 6 | `pre_commodity.run()` |
 | 7 | `pre_foreignindex.run()` |
@@ -120,263 +120,263 @@ raw가 비어 있거나 최신성이 부족한 경우 정상 0건과 입력 장�
 | 14 | `pre_total_market_daily_feature.run()` |
 | 15 | `pre_total_stock_daily_feature.run()` |
 
-실제 호출 순서는 코드가 우선한다.
+The actual call order in the code takes precedence.
 
-### 주석 처리 단계
+### Commented-out Stage
 
-현재 소스 정적 확인 기준 `pre_agency_analysis.run()`은 `pre_daily.py`에서 주석 처리되어 실행되지 않는다.
+Based on the current static source review, `pre_agency_analysis.run()` is commented out in `pre_daily.py` and is not executed.
 
-| 항목 | 처리 |
+| Item | Handling |
 | --- | --- |
-| 현재 상태 | Daily 자동 실행 제외 |
-| 후속 단계 | `pre_agency_daily_aggregator.py` 입력 최신성 확인 |
-| 주석 해제 | 별도 기능 변경 |
-| 문서 | 실행 중인 단계처럼 표현하지 않음 |
+| Current state | Excluded from Daily automatic execution |
+| Follow-up stage | Verify input freshness of `pre_agency_daily_aggregator.py` |
+| Uncommenting | A separate functional change |
+| Documentation | Do not describe it as a running stage |
 
-오래된 agency analysis 결과를 당일 신규 결과처럼 집계하지 않는다.
+Do not aggregate stale agency analysis results as if they were new same-day results.
 
-### 부분 실패
+### Partial Failure
 
-| 위험 | 처리 |
+| Risk | Handling |
 | --- | --- |
-| 중간 단계 예외 | 후속 total feature 진행 여부 확인 |
-| 반환값 미사용 | 예외 전파 방식 확인 |
-| Required 실패 | 전체 성공으로 기록 금지 |
-| Optional 단계 | 주석 처리와 실패를 구분 |
-| Total feature | 하위 feature 최신성 확인 후 생성 |
+| Mid-stage exception | Verify whether the subsequent Total Feature proceeds |
+| Unused return value | Verify the exception propagation method |
+| Required failure | Do not record it as an overall success |
+| Optional stage | Distinguish commented-out from failed |
+| Total Feature | Generate only after verifying subordinate feature freshness |
 
-실패한 단계가 있는데 SUCCESS marker만 남는 구조를 정상으로 취급하지 않는다.
+Do not treat a structure that leaves only a SUCCESS marker while a stage has failed as normal.
 
-## 주요 파일
+## Primary Files
 
-### Orchestration과 Helper
+### Orchestration and Helper
 
-| 파일 | 역할 |
+| File | Role |
 | --- | --- |
 | `pre_daily.py` | Daily Step 3 orchestration |
-| `db_config.py` | PostgreSQL 환경변수 loader |
-| `interest_get_holidays.py` | 주말 · 공휴일 확인 |
+| `db_config.py` | PostgreSQL environment-variable loader |
+| `interest_get_holidays.py` | Weekend · Market Holiday check |
 
 ### News
 
-| 파일 | 역할 |
+| File | Role |
 | --- | --- |
-| `pre_news_analysis.py` | 뉴스-종목 매핑 · 감성 · keyword |
-| `pre_news_event_detection.py` | 뉴스 event 탐지 |
-| `pre_news_daily_aggregator.py` | 종목 · 일자 단위 뉴스 집계 |
+| `pre_news_analysis.py` | News-stock mapping · sentiment · keyword |
+| `pre_news_event_detection.py` | News event detection |
+| `pre_news_daily_aggregator.py` | Stock- and date-level news aggregation |
 
 ### Agency
 
-| 파일 | 역할 |
+| File | Role |
 | --- | --- |
-| `pre_agency_analysis.py` | 투자의견 · 목표가 분석 |
-| `pre_agency_daily_aggregator.py` | 종목 · 일자 단위 리포트 집계 |
+| `pre_agency_analysis.py` | Investment opinion · target price analysis |
+| `pre_agency_daily_aggregator.py` | Stock- and date-level report aggregation |
 
-### Price와 Market
+### Price and Market
 
-| 파일 | 역할 |
+| File | Role |
 | --- | --- |
-| `pre_price.py` | 가격 feature |
-| `pre_marketbreadth.py` | 시장 폭 feature |
+| `pre_price.py` | Price feature |
+| `pre_marketbreadth.py` | Market breadth feature |
 
-### Macro 계열
+### Macro Group
 
-| 파일 | 역할 |
+| File | Role |
 | --- | --- |
-| `pre_macroeconomic.py` | 매크로 feature |
-| `pre_commodity.py` | 원자재 feature |
-| `pre_foreignindex.py` | 해외지수 feature |
+| `pre_macroeconomic.py` | Macro feature |
+| `pre_commodity.py` | Commodity feature |
+| `pre_foreignindex.py` | Foreign index feature |
 
-### Flow와 거래구조
+### Flow and Market Structure
 
-| 파일 | 역할 |
+| File | Role |
 | --- | --- |
-| `pre_investorflow.py` | 투자자 수급 feature |
-| `pre_program.py` | 프로그램 매매 feature |
-| `pre_shortsell.py` | 공매도 feature |
+| `pre_investorflow.py` | Investor Flow feature |
+| `pre_program.py` | Program Trading feature |
+| `pre_shortsell.py` | Short Selling feature |
 
 ### Total Feature
 
-| 파일 | 역할 |
+| File | Role |
 | --- | --- |
-| `pre_total_stock_daily_feature.py` | 종목 단위 total feature |
-| `pre_total_market_daily_feature.py` | 시장 단위 total feature |
+| `pre_total_stock_daily_feature.py` | Stock-level Total Feature |
+| `pre_total_market_daily_feature.py` | Market-level Total Feature |
 
-상세 역할은 [소스 파일 카탈로그](docs/source-file-catalog.md)를 참고한다.
+For detailed roles, see the [source file catalog](docs/source-file-catalog.md).
 
-## Feature 영역별 기준
+## Feature Area Standards
 
 ### News
 
-| 항목 | 기준 |
+| Item | Standard |
 | --- | --- |
-| Mapping | alias · ticker 의미 유지 |
-| Sentiment | score 기준과 version 확인 |
+| Mapping | Preserve alias · ticker semantics |
+| Sentiment | Verify Sentiment Score basis and version |
 | Event | master · keyword · sector weight |
-| 중복 | 뉴스 · event unique key |
-| 순서 | analysis 이후 aggregator |
+| Duplicates | News · event unique key |
+| Order | analysis before aggregator |
 
 ### Agency
 
-| 항목 | 기준 |
+| Item | Standard |
 | --- | --- |
-| Opinion | normalization · score 유지 |
-| Target Price | NULL · 0 구분 |
-| Analysis | `pre_agency_analysis.run()` Daily 주석 처리 |
-| Aggregator | `interest_agency_raw` 직접 입력 · analysis 산출 비의존 |
-| 과거 값 | 당일 신규 결과처럼 사용 금지 |
+| Opinion | Preserve normalization · score |
+| Target Price | Distinguish NULL · 0 |
+| Analysis | `pre_agency_analysis.run()` commented out in Daily |
+| Aggregator | `interest_agency_raw` direct input · independent of analysis output |
+| Past values | Do not use as if they were new same-day results |
 
-### Price와 Market Breadth
+### Price and Market Breadth
 
-| 항목 | 기준 |
+| Item | Standard |
 | --- | --- |
-| Price | 수익률 · momentum · 이동평균 |
-| Lookback | 필요한 과거 기간 유지 |
-| Missing | 거래 정지와 누락 구분 |
-| Breadth | universe · 시장 기준 |
-| 성공 | 부분 universe로 전체 성공 금지 |
+| Price | Return · momentum · moving average |
+| Lookback | Preserve the required historical period |
+| Missing | Distinguish trading halt from missing data |
+| Breadth | universe · market basis |
+| Success | Do not record overall success from a partial universe |
 
 ### Macro · Commodity · Foreign Index
 
-| 항목 | 기준 |
+| Item | Standard |
 | --- | --- |
-| Mapping | indicator · source 유지 |
-| Date | timezone · 시차 확인 |
-| Holiday | forward-fill 정책 확인 |
-| Missing | 빈 raw와 전일 값 유지 구분 |
-| 실패 | 일부 지표와 전체 실패 구분 |
+| Mapping | Preserve indicator · source |
+| Date | Verify timezone · time lag |
+| Holiday | Verify forward-fill policy |
+| Missing | Distinguish empty raw from retained previous-day value |
+| Failure | Distinguish partial-indicator from full failure |
 
 ### Flow · Program · Short Sell
 
-| 항목 | 기준 |
+| Item | Standard |
 | --- | --- |
-| 값 의미 | 수량 · 금액 · 비율 · sign |
-| 결합 | 가격 raw와 join 기준 |
-| Date | KRX raw 최신 거래일 |
-| Empty | 실제 0건과 미수집 구분 |
-| 계산 | division by zero · NULL 처리 |
+| Value meaning | quantity · amount · ratio · sign |
+| Join | Join basis with price raw |
+| Date | KRX raw latest Trading Day |
+| Empty | Distinguish an actual zero-record from not-yet-collected |
+| Calculation | division by zero · NULL handling |
 
 ### Total Feature
 
-| 항목 | 기준 |
+| Item | Standard |
 | --- | --- |
-| 입력 | 모든 하위 feature 최신성 |
-| 기준일 | 같은 trade date |
+| Input | Freshness of all subordinate features |
+| Base date | Same trade date |
 | Join | key · cardinality |
-| Missing | 실패 입력을 NULL로 숨기지 않음 |
-| Weight | 변경 시 전략 영향 확인 |
-| Holiday | API 실패를 정상 SKIP으로 변환 금지 |
+| Missing | Do not hide a failed input as NULL |
+| Weight | Verify strategy impact when changed |
+| Holiday | Do not convert API failure into a normal SKIP |
 
-## 실행 위험
+## Execution Risk
 
 ### Daily
 
-`pre_daily.py`는 여러 전처리 단계를 연쇄 실행한다.
+`pre_daily.py` runs multiple preprocessing stages in sequence.
 
-| 위험 | 내용 |
+| Risk | Content |
 | --- | --- |
-| Database | 대량 read · insert · update · upsert |
-| Delete | 재생성 범위에 따라 데이터 삭제 가능 |
+| Database | Bulk read · insert · update · upsert |
+| Delete | Data deletion possible depending on the regeneration scope |
 | Network | Holiday API |
-| Failure | 중간 실패 뒤 후속 단계 진행 가능성 |
-| Total | 불완전한 입력으로 종합 feature 생성 가능성 |
+| Failure | Possibility of proceeding after a mid-stage failure |
+| Total | Possibility of generating a Total Feature from incomplete input |
 
-### 개별 Feature
+### Individual Feature
 
-개별 `pre_*.py`도 DB 쓰기와 대량 재계산을 수행할 수 있다.
+Each `pre_*.py` can also perform DB writes and bulk recomputation.
 
-특히 아래 파일은 변경 영향이 크다.
+The following files in particular have a large change impact.
 
-| 파일 | 위험 |
+| File | Risk |
 | --- | --- |
-| `pre_total_stock_daily_feature.py` | 다수 종목 feature 결합 |
-| `pre_total_market_daily_feature.py` | 다수 시장 feature 결합 |
-| `pre_news_event_detection.py` | event 대량 생성 |
-| `pre_news_daily_aggregator.py` | 뉴스 일일 집계 |
-| `pre_agency_daily_aggregator.py` | 리포트 일일 집계 |
+| `pre_total_stock_daily_feature.py` | Combines many stock features |
+| `pre_total_market_daily_feature.py` | Combines many market features |
+| `pre_news_event_detection.py` | Bulk event generation |
+| `pre_news_daily_aggregator.py` | News daily aggregation |
+| `pre_agency_daily_aggregator.py` | Report daily aggregation |
 
-## 계산 안전
+## Calculation Safety
 
-- 계산식 변경 전 feature 정의와 downstream 소비를 확인한다.
-- 결측값, 0, 음수와 극단값 처리 의미를 유지한다.
-- rolling window와 minimum period를 확인한다.
-- rounding과 데이터 타입을 확인한다.
-- 미래 날짜와 당일 미확정 데이터를 사용하지 않는다.
-- look-ahead bias를 만들지 않는다.
-- total score와 weight 변경은 단순 리팩터링으로 취급하지 않는다.
+- Verify the feature definition and downstream consumption before changing a formula.
+- Preserve the handling semantics of missing values, 0, negatives, and outliers.
+- Verify the rolling window and minimum period.
+- Verify rounding and data types.
+- Do not use future dates or same-day unconfirmed data.
+- Do not create look-ahead bias.
+- Do not treat total score and weight changes as simple refactoring.
 
 ## Database
 
-### 연결 기준
+### Connection Basis
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
 | Database | `portfolio` |
 | Config loader | `db_config.py` · `get_db_config()` |
-| 환경변수 | `INTEREST_DB_*` |
-| Password | 기본값 없음 |
-| 실행 모드 | `PREPROCESSOR_RUN_MODE` · 기본 `PRODUCTION` |
+| Environment variables | `INTEREST_DB_*` |
+| Password | No default |
+| Run mode | `PREPROCESSOR_RUN_MODE` · default `PRODUCTION` |
 | Production search path | `preprocessor, interest, reference, legacy, public` |
 | Shadow search path | `preprocessor_shadow, preprocessor, interest, reference, legacy, public` |
 
-운영 환경에서는 Preprocessor 전용 DB user를 사용한다.
+In the operational environment, a dedicated Preprocessor DB user is used.
 
-문서의 `postgres` 기본값을 운영 권한 기준으로 해석하지 않는다.
+Do not interpret the `postgres` default in the documentation as an operational-privilege baseline.
 
-Shadow 실행은 `PREPROCESSOR_RUN_MODE=SHADOW`로 선택하며, write는 `preprocessor_shadow`로 향한다.
+Shadow execution is selected with `PREPROCESSOR_RUN_MODE=SHADOW`, and writes are directed to `preprocessor_shadow`.
 
-### Schema 책임
+### Schema Responsibilities
 
-| Schema | 역할 |
+| Schema | Role |
 | --- | --- |
-| `preprocessor` | Production 분석 · 집계 feature |
-| `preprocessor_shadow` | Candidate Shadow 임시 output · cleanup 대상 |
+| `preprocessor` | Production analysis · aggregation feature |
+| `preprocessor_shadow` | Candidate Shadow temporary output · cleanup target |
 | `interest` | Crawler raw · history |
-| `reference` | ticker · universe · 기준정보 |
-| `legacy` | 과거 호환 |
+| `reference` | ticker · universe · reference data |
+| `legacy` | Backward compatibility |
 | `public` | fallback search path |
 
-`preprocessor_shadow`는 downstream 운영 schema가 아니라 Candidate 검증용 격리 output이다.
+`preprocessor_shadow` is not a downstream operational schema but an isolated output for Candidate validation.
 
-Preprocessor는 `research`, `decision`, `execution` 결과를 직접 생성하지 않는다.
+The Preprocessor does not directly produce `research`, `decision`, or `execution` results.
 
-### SQL 기준
+### SQL Basis
 
-- 신규 SQL은 가능한 한 schema-qualified 이름을 사용한다.
-- 기존 unqualified SQL은 connection `search_path` 기준으로 동작한다.
-- unique key와 `ON CONFLICT` 의미를 유지한다.
-- aggregation의 group key와 join cardinality를 확인한다.
-- delete 후 insert는 대상 일자와 범위를 확인한다.
-- transaction과 rollback 경계를 유지한다.
-- 부분 적재 뒤 SUCCESS를 출력하지 않는다.
+- New SQL uses schema-qualified names whenever possible.
+- Existing unqualified SQL operates based on the connection `search_path`.
+- Preserve the meaning of unique keys and `ON CONFLICT`.
+- Verify the group key and join cardinality of aggregations.
+- For a delete-then-insert pattern, verify the target date and range.
+- Preserve transaction and rollback boundaries.
+- Do not print SUCCESS after a partial load.
 
 ## Holiday API
 
-`interest_get_holidays.py` 또는 이를 참조하는 단계는 외부 holiday API를 호출할 수 있다.
+`interest_get_holidays.py` or the stages that reference it may call an external holiday API.
 
-| 항목 | 기준 |
+| Item | Standard |
 | --- | --- |
-| HTTP | timeout · status 확인 |
-| 주말 | 공휴일과 구분 |
-| 실패 | 정상 영업일로 해석 금지 |
-| SKIP | API 장애를 정상 SKIP으로 숨기지 않음 |
+| HTTP | Verify timeout · status |
+| Weekend | Distinguish from Market Holiday |
+| Failure | Do not interpret as a normal business day |
+| SKIP | Do not hide an API failure as a normal SKIP |
 | Test | HTTP mock |
 
-문서 작업과 정적 분석 중에는 실제 API를 호출하지 않는다.
+Do not call the real API during documentation work and static analysis.
 
-## 설정
+## Configuration
 
-### DB 환경변수
+### DB Environment Variables
 
-| 환경변수 | 기본값 · 역할 |
+| Environment Variable | Default · Role |
 | --- | --- |
 | `INTEREST_DB_HOST` | `localhost` |
 | `INTEREST_DB_PORT` | `5433` |
 | `INTEREST_DB_NAME` | `portfolio` |
-| `INTEREST_DB_USER` | 환경별 Preprocessor DB user |
-| `INTEREST_DB_PASSWORD` | 기본값 없음 |
+| `INTEREST_DB_USER` | Environment-specific Preprocessor DB user |
+| `INTEREST_DB_PASSWORD` | No default |
 
-PowerShell 예시:
+PowerShell example:
 
 ```powershell
 $env:INTEREST_DB_HOST="localhost"
@@ -386,40 +386,40 @@ $env:INTEREST_DB_USER="[REDACTED]"
 $env:INTEREST_DB_PASSWORD="[REDACTED]"
 ```
 
-### 기타 설정
+### Other Settings
 
-| 범주 | 예시 |
+| Category | Example |
 | --- | --- |
 | Feature | processor version · weight |
 | Date | trade date · business date |
 | Database | raw · feature table |
 | API | holiday endpoint |
-| Runtime | ECS · container 환경변수 |
+| Runtime | ECS · container environment variables |
 
-실제 local config와 credential 값을 문서에 기록하지 않는다.
+Do not record actual local config and credential values in the documentation.
 
-## AWS 운영
+## AWS Operations
 
-Preprocessor는 AWS Paper Daily Step 3에서 ECS Fargate RunTask로 실행되며, Step Functions의 `Step3_RunPreprocessor`가 Task Definition Revision을 고정 참조한다.
+The Preprocessor runs as an ECS Fargate RunTask in AWS Paper Daily Step 3, and the Step Functions `Step3_RunPreprocessor` holds a fixed reference to the Task Definition Revision.
 
-| 항목 | 책임 |
+| Item | Responsibility |
 | --- | --- |
-| Preprocessor | feature 처리 entrypoint |
-| ECS Fargate | 실행 환경 · RunTask |
+| Preprocessor | Feature processing entrypoint |
+| ECS Fargate | Execution environment · RunTask |
 | Step Functions | Daily orchestration · `Step3_RunPreprocessor` |
-| Scheduler | 실행 시각 |
-| Crawler | raw 입력 |
-| Strategy | feature 소비 |
+| Scheduler | Execution timing |
+| Crawler | raw input |
+| Strategy | Feature consumption |
 
-배포·실행 흐름은 아래와 같다.
+The deployment/execution flow is as follows.
 
-main push → GitHub Actions → GitHub OIDC → CodeBuild(CI gate + Docker Build) → ECR Candidate image → digest-pinned Candidate Task Definition → Data Shadow 검증 → GitHub production 승인 → 동일 Candidate Task Definition을 Step 3에 Promotion
+main push → GitHub Actions → GitHub OIDC → CodeBuild (CI gate + Docker Build) → ECR Candidate image → digest-pinned Candidate Task Definition → Data Shadow validation → GitHub production approval → Promotion of the same Candidate Task Definition to Step 3
 
-실제 cluster, task definition ARN, image URI, subnet과 security group은 외부 운영 사실이다.
+The actual cluster, task definition ARN, image URI, subnet, and security group are external operational facts.
 
-문서에는 실제 값을 기록하지 않고 placeholder만 사용한다.
+Do not record actual values in the documentation; use placeholders only.
 
-| 값 | Placeholder |
+| Value | Placeholder |
 | --- | --- |
 | ECS task | `<PREPROCESSOR_ECS_TASK>` |
 | ECR image | `<ECR_IMAGE_URI>` |
@@ -430,108 +430,108 @@ main push → GitHub Actions → GitHub OIDC → CodeBuild(CI gate + Docker Buil
 | DB host | `<DB_HOST>` |
 | Command id | `<COMMAND_ID>` |
 
-## CI와 Container 빌드
+## CI and Container Build
 
-GitHub Actions가 AWS CodeBuild를 실행하고, CodeBuild가 CI gate와 Docker Build를 수행한다.
+GitHub Actions runs AWS CodeBuild, and CodeBuild performs the CI gate and Docker Build.
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| Python Compile | 구문 검증 |
-| Unit Test | DB · 외부 API mock |
-| Static Analysis | ruff 기반 |
-| Container Smoke Test | import only · `run()` 미호출 |
-| Docker Build | 컨테이너 이미지 빌드 |
-| ECR Push | main push 자동 · `workflow_dispatch`는 입력으로 제어 |
-| 인증 | GitHub OIDC · Preprocessor 전용 Role |
-| Role 전달 | Repository Variable 기반 Role ARN |
+| Python Compile | Syntax verification |
+| Unit Test | DB · external API mock |
+| Static Analysis | ruff-based |
+| Container Smoke Test | import only · `run()` not called |
+| Docker Build | Container image build |
+| ECR Push | Automatic on main push · controlled by input for `workflow_dispatch` |
+| Authentication | GitHub OIDC · Preprocessor-dedicated Role |
+| Role passing | Repository Variable-based Role ARN |
 
-- main push는 Candidate image publish를 자동으로 수행한다.
-- `workflow_dispatch` 보조 경로는 `push_image` 입력으로 publish 여부를 제어하며 기본값은 `true`다.
-- Candidate build/publish와 Production activation은 분리한다.
-- 각 검증은 실제 운영 DB DML이나 Holiday API 호출 없이 격리된 상태로 수행한다.
-- Container Smoke Test는 module import만 수행하고 `run()`을 호출하지 않는다.
+- main push automatically performs the Candidate image publish.
+- The `workflow_dispatch` auxiliary path controls whether to publish via the `push_image` input, and the default is `true`.
+- Separate Candidate build/publish from Production activation.
+- Each validation runs in an isolated state without actual operational DB DML or Holiday API calls.
+- The Container Smoke Test performs module import only and does not call `run()`.
 
-## ECS Revision 배포와 Rollback
+## ECS Revision Deployment and Rollback
 
-- 기존 운영 Revision을 기준선으로 읽는다.
-- 신규 이미지는 ECR Digest로 고정한다.
-- 신규 Task Definition Revision을 등록한다.
-- Step Functions의 Preprocessor State만 신규 Revision으로 전환한다.
-- 전체 State Machine 정의를 불필요하게 변경하지 않는다.
-- Rollback은 이전 Task Definition Revision을 다시 참조하도록 변경한다.
-- Rollback 상태에서 신규 Revision 참조가 남지 않았는지 확인한다.
-- 검증 후 신규 Revision으로 재승격할 수 있다.
-- 실행 중인 State Machine execution이 있으면 정의 전환을 중단한다.
+- Read the existing operational Revision as the baseline.
+- Pin the new image by ECR Digest.
+- Register a new Task Definition Revision.
+- Switch only the Preprocessor State in Step Functions to the new Revision.
+- Do not unnecessarily change the full State Machine definition.
+- For Rollback, change the reference back to the previous Task Definition Revision.
+- Verify that no reference to the new Revision remains in the rollback state.
+- After validation, the new Revision can be re-promoted.
+- If there is a running State Machine execution, halt the definition switch.
 
-## Data Shadow와 Production Promotion
+## Data Shadow and Production Promotion
 
-Candidate 이미지를 Production에 활성화하기 전에 별도 Data Shadow 검증을 수행한다.
+Before activating a Candidate image in Production, perform separate Data Shadow validation.
 
-Shadow 검증은 Production preprocessor를 Champion으로, `preprocessor_shadow`를 Challenger로 둔다.
+Shadow validation places the Production preprocessor as the Champion and `preprocessor_shadow` as the Challenger.
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| 실행 모드 | `PREPROCESSOR_RUN_MODE` (`PRODUCTION` · `SHADOW`) |
-| Shadow write | `preprocessor_shadow` schema 격리 |
-| 입력 | 동일 Production Raw · Reference |
+| Run mode | `PREPROCESSOR_RUN_MODE` (`PRODUCTION` · `SHADOW`) |
+| Shadow write | `preprocessor_shadow` schema isolation |
+| Input | Same Production Raw · Reference |
 | Shadow Identity | `PREPROCESSOR_SHADOW_RUN_ID` (DevOps Evidence Identity) |
-| Quality Gate 범위 | Candidate 실행 · Shadow output · Trade Date core output |
-| 무결성 | Production 변경 0건 · Reference seed integrity |
-| 격리 | Schema · sequence isolation contract |
-| Cleanup | Shadow 실행 결과 제거 · residual 0 · Production DML 금지 |
-| 값 품질 비교 | `value_equality_gate = NOT_APPLICABLE` |
-| Promotion 승인 | GitHub `production` Environment manual approval |
-| Promotion 대상 | Shadow-tested 동일 Candidate Task Definition |
+| Quality Gate scope | Candidate execution · Shadow output · Trade Date core output |
+| Integrity | 0 Production changes · Reference seed integrity |
+| Isolation | Schema · sequence isolation contract |
+| Cleanup | Remove Shadow execution results · 0 residual · no Production DML |
+| Value quality comparison | `value_equality_gate = NOT_APPLICABLE` |
+| Promotion approval | GitHub `production` Environment manual approval |
+| Promotion target | Shadow-tested same Candidate Task Definition |
 
-핵심 계약:
+Core contract:
 
-- Shadow validation은 Production Daily orchestration과 분리된 별도 실행 경계다.
-- DevOps Quality Gate는 Candidate feature 값이 Production과 동일한지를 요구하지 않는다.
-- Feature 값 품질과 허용 범위는 Preprocessor 팀 책임이며 향후 differential 비교로 확장할 수 있다.
-- Cleanup은 Quality Gate PASS가 아니라 유효한 Prepare Evidence 기준으로 수행하며 PASS·FAIL 모두 공통 Cleanup으로 수렴한다.
-- Cleanup · Verify Cleanup · Production Integrity 완료 전에는 Promotion을 하지 않는다.
-- Shadow PASS와 GitHub production 승인 이전에는 Promotion을 하지 않는다.
-- 승인 이후 image rebuild와 Task Definition 재등록을 하지 않는다.
-- Shadow validation 자체는 자동 Production Promotion을 수행하지 않는다.
+- Shadow validation is a separate execution boundary from the Production Daily orchestration.
+- The DevOps Quality Gate does not require the Candidate feature values to be identical to Production.
+- Feature value quality and tolerance ranges are the Preprocessor team's responsibility and may be extended to differential comparison in the future.
+- Cleanup is performed based on valid Prepare Evidence rather than a Quality Gate PASS, and both PASS and FAIL converge to a common Cleanup.
+- Do not promote before Cleanup · Verify Cleanup · Production Integrity are complete.
+- Do not promote before a Shadow PASS and GitHub production approval.
+- Do not rebuild the image or re-register the Task Definition after approval.
+- Shadow validation itself does not perform automatic Production Promotion.
 
-전체 Shadow State Machine 정의, IAM Policy, 실제 ARN과 S3 Evidence 상세는 port-devops 저장소에서 관리한다.
+The full Shadow State Machine definition, IAM Policy, actual ARNs, and S3 Evidence details are managed in the port-devops repository.
 
-## 실행
+## Execution
 
-각 Python 파일은 독립 entrypoint일 수 있다.
+Each Python file may be an independent entrypoint.
 
-아래 명령은 실행 위험 예시다.
+The command below is an execution-risk example.
 
 ```powershell
 python pre_daily.py
 ```
 
-실행 시 다수 DB 작업과 외부 holiday API 호출이 발생할 수 있다.
+Running it can trigger many DB operations and external holiday API calls.
 
-## 실행 금지 목록
+## Execution Prohibition List
 
-문서 작업과 정적 분석 중에는 아래 작업을 수행하지 않는다.
+Do not perform the following during documentation work and static analysis.
 
-- `pre_daily.py` 실행
-- 개별 `pre_*.py` 실행
+- Running `pre_daily.py`
+- Running individual `pre_*.py`
 - DB DDL · DML · psql
-- Holiday API 호출
-- Crawler 실행
-- 모델 다운로드 · 학습 · 추론
-- ECS · SSM · Scheduler 실행
-- Slack 호출
+- Holiday API calls
+- Running the Crawler
+- Model download · training · inference
+- ECS · SSM · Scheduler execution
+- Slack calls
 
-## 보안
+## Security
 
-다음 값은 코드, 문서와 로그에 원문으로 기록하지 않는다.
+Do not record the following values verbatim in code, documentation, or logs.
 
-- DB password와 connection string
+- DB password and connection string
 - API key · token
-- 실제 DB host · private IP
+- Actual DB host · private IP
 - AWS account-id
-- 실제 ARN
+- Actual ARN
 - ECR image URI
-- Image Digest 전체값
+- Full Image Digest value
 - GitHub Actions Run ID · CodeBuild Build ID
 - subnet · security group id
 - command id
@@ -540,9 +540,9 @@ python pre_daily.py
 
 Placeholder:
 
-| 값 | Placeholder |
+| Value | Placeholder |
 | --- | --- |
-| 일반 민감정보 | `[REDACTED]` |
+| General sensitive information | `[REDACTED]` |
 | DB host | `[REDACTED_DB_HOST]` |
 | ARN | `[REDACTED_ARN]` |
 | command id | `[REDACTED_COMMAND_ID]` |
@@ -553,11 +553,11 @@ Placeholder:
 | GitHub OIDC Role | `<GITHUB_OIDC_ROLE>` |
 | CodeBuild project | `<CODEBUILD_PROJECT>` |
 
-Git SHA 기반 Image Tag, ECR Image Digest 고정, ECS Task Definition Revision, Step Functions 활성 Revision은 실제 전체값 대신 의미 중심으로 기록한다.
+Record the Git SHA-based Image Tag, ECR Image Digest pinning, ECS Task Definition Revision, and Step Functions active Revision by meaning rather than by their full actual values.
 
-## 외부 의존성
+## External Dependencies
 
-| 항목 | 역할 |
+| Item | Role |
 | --- | --- |
 | Python | Runtime |
 | psycopg2 | PostgreSQL |
@@ -565,15 +565,15 @@ Git SHA 기반 Image Tag, ECR Image Digest 고정, ECS Task Definition Revision,
 | Requests | Holiday API |
 | PostgreSQL | raw read · feature persistence |
 
-## 문서
+## Documents
 
-| 문서 | 역할 |
+| Document | Role |
 | --- | --- |
-| `AGENTS.md` | port-interest-preprocessor 작업 규칙 |
-| `README.md` | 현재 구조와 운영 AS-IS |
-| `CHANGELOG.md` | 주요 변경 이력 |
-| `docs/source-file-catalog.md` | 주요 파일과 책임 |
+| `AGENTS.md` | port-interest-preprocessor working rules |
+| `README.md` | Current structure and operational AS-IS |
+| `CHANGELOG.md` | Primary change history |
+| `docs/source-file-catalog.md` | Primary files and responsibilities |
 
-날짜별 `docs/worklog/*.md`는 신규 생성하지 않는다.
+Do not create date-specific `docs/worklog/*.md` files.
 
-코드와 문서 변경 이력은 `CHANGELOG.md`에 기록한다.
+Record code and documentation change history in `CHANGELOG.md`.

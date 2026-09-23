@@ -1,7 +1,7 @@
-"""증권사 리포트 데이터를 종목/일자 단위 feature로 집계하는 스크립트.
+"""Script that aggregates broker report data into per-ticker, per-day features.
 
-interest_agency_raw와 가격 원천 데이터를 결합해 추천 점수, 목표가 업사이드,
-리포트 수 지표를 pre_agency_daily_feature에 upsert한다.
+Joins interest_agency_raw with raw price data and upserts recommendation scores,
+target-price upside, and report-count metrics into pre_agency_daily_feature.
 """
 
 import psycopg2

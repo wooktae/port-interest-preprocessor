@@ -1,7 +1,7 @@
-"""시장 휴일 여부를 조회하는 외부 API helper 모듈.
+"""External API helper module that checks whether a date is a market holiday.
 
-주말을 우선 판정하고, Nager.Date public holiday API를 호출해 KR/US 휴일을
-메모리 캐시에 저장한다. 문서화/정적 검증 중에는 호출하지 않는다.
+It checks weekends first, then calls the Nager.Date public holiday API to store
+KR/US holidays in an in-memory cache. Do not call it during documentation or static verification.
 """
 
 import requests
@@ -9,7 +9,7 @@ from datetime import datetime, date
 
 HOLIDAY_API_BASE = "https://date.nager.at/api/v3/PublicHolidays"
 
-# 캐시 (API 호출 최소화)
+# Cache (minimize API calls)
 _cache = {}
 
 
@@ -39,11 +39,11 @@ def is_holiday(target_date: date, market: str) -> bool:
       - "US"
     """
 
-    # 주말
+    # Weekend
     if target_date.weekday() >= 5:
         return True
 
-    # 공휴일
+    # Public holiday
     holidays = _fetch_holidays(target_date.year, market)
 
     return target_date in holidays

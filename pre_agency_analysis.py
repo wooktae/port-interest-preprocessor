@@ -1,7 +1,7 @@
-"""증권사 리포트 원천 데이터를 분석 테이블로 정규화하는 스크립트.
+"""Script that normalizes raw broker report data into an analysis table.
 
-interest_agency_raw에서 신규 리포트를 읽어 투자의견 점수와 목표가 정보를
-pre_agency_analysis에 적재한다.
+Reads new reports from interest_agency_raw and loads investment-opinion scores
+and target-price information into pre_agency_analysis.
 """
 
 import psycopg2

@@ -1,7 +1,7 @@
-"""공매도 원천 데이터를 종목/일자 단위 short feature로 집계하는 스크립트.
+"""Script that aggregates short selling source data into per-ticker/date short features.
 
-interest_shortsell_raw에서 공매도 비율 평균, 모멘텀, z-score, spike flag,
-pressure score를 계산해 pre_shortsell_daily_feature에 저장한다.
+It computes short ratio averages, momentum, z-score, spike flag, and pressure score
+from interest_shortsell_raw and stores them in pre_shortsell_daily_feature.
 """
 
 import psycopg2

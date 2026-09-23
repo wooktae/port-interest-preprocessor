@@ -1,7 +1,7 @@
-"""매크로 원천 데이터를 일자 단위 압력 feature로 변환하는 스크립트.
+"""Script that transforms macro source data into daily pressure features.
 
-interest_macroeconomic_raw의 yfinance 계열 지표를 기반으로 변동성, 금리,
-환율 압력과 종합 macro score를 pre_macroeconomic_daily_feature에 저장한다.
+Based on the yfinance-series indicators in interest_macroeconomic_raw, it stores
+volatility, rate, and FX pressure and a composite macro score in pre_macroeconomic_daily_feature.
 """
 
 import psycopg2
