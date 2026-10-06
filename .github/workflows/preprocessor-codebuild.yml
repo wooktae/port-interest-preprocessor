@@ -31,9 +31,9 @@ env:
   CODEBUILD_PROJECT: portfolio-interest-preprocessor-build
   ECR_REPOSITORY: portfolio-interest-preprocessor
   APP_CONTAINER: interest-preprocessor
-  SHADOW_STATE_MACHINE_ARN: arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-preprocessor-shadow-validation
-  OPERATING_STATE_MACHINE_ARN: arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-11-safe
-  OPERATING_STATE_MACHINE_SECONDARY_ARN: arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-17-approval
+  SHADOW_STATE_MACHINE_ARN: ${{ vars.SHADOW_STATE_MACHINE_ARN }}
+  OPERATING_STATE_MACHINE_ARN: ${{ vars.OPERATING_STATE_MACHINE_ARN }}
+  OPERATING_STATE_MACHINE_SECONDARY_ARN: ${{ vars.OPERATING_STATE_MACHINE_SECONDARY_ARN }}
 
 jobs:
   build_candidate:
