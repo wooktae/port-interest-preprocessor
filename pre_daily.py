@@ -1,7 +1,7 @@
-"""일일 전처리 파이프라인을 순서대로 호출하는 orchestration 스크립트.
+"""Orchestration script that calls the daily preprocessing pipeline in order.
 
-각 pre_* 모듈의 run() entrypoint를 호출하며, 실제 실행 시 DB 읽기/쓰기와
-외부 휴일 API 호출이 연쇄적으로 발생할 수 있다.
+It invokes the run() entrypoint of each pre_* module; during actual execution,
+DB reads/writes and external holiday API calls can occur in a chain.
 """
 
 import pre_news_analysis
@@ -19,11 +19,11 @@ import pre_macroeconomic
 import pre_program
 import pre_shortsell
 
-# 🔥 추가
+# 🔥 added
 import pre_price
 import pre_investorflow
 
-# 🔥 추가
+# 🔥 added
 import pre_total_market_daily_feature
 import pre_total_stock_daily_feature
 
@@ -31,19 +31,19 @@ def run():
 
     print("🚀 PREPROCESSOR PIPELINE START")
 
-    # 1️⃣ 뉴스 NLP 분석
+    # 1️⃣ News NLP analysis
     pre_news_analysis.run()
 
-    # 2️⃣ 뉴스 이벤트 탐지
+    # 2️⃣ News event detection
     pre_news_event_detection.run()
 
-    # 3️⃣ 뉴스 Daily 집계
+    # 3️⃣ News daily aggregation
     pre_news_daily_aggregator.run()
 
-    # 4️⃣ Agency 분석
+    # 4️⃣ Agency analysis
     #pre_agency_analysis.run()
 
-    # 5️⃣ Agency Daily 집계
+    # 5️⃣ Agency daily aggregation
     pre_agency_daily_aggregator.run()
 
     # 6️⃣ Commodity
@@ -55,13 +55,13 @@ def run():
     # 9️⃣ Macro
     pre_macroeconomic.run()
 
-    # 🔥 1️⃣2️⃣ PRICE (추가)
+    # 🔥 1️⃣2️⃣ PRICE (added)
     pre_price.run()
 
     # 8️⃣ Market Breadth
     pre_marketbreadth.run()
 
-    # 🔥 1️⃣3️⃣ INVESTORFLOW (추가)
+    # 🔥 1️⃣3️⃣ INVESTORFLOW (added)
     pre_investorflow.run()
 
     # 🔟 Program

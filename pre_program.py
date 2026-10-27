@@ -1,7 +1,8 @@
-"""프로그램 매매 원천 데이터를 일자 단위 시장 feature로 변환하는 스크립트.
+"""Script that transforms program trading source data into daily market features.
 
-interest_program_raw와 가격 원천 거래대금을 결합해 차익/비차익/전체 프로그램
-매매 비율, 압력, 모멘텀 지표를 pre_program_daily_feature에 upsert한다.
+It combines interest_program_raw with price-source trading value and upserts the
+arbitrage/non-arbitrage/total program trading ratios, pressure, and momentum indicators
+into pre_program_daily_feature.
 """
 
 import psycopg2

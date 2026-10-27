@@ -1,7 +1,7 @@
-"""전처리 스크립트에서 공통으로 사용하는 PostgreSQL 연결 설정 모듈.
+"""Shared PostgreSQL connection configuration module used by the preprocessing scripts.
 
-DB 접속 정보는 환경변수에서 읽고, 비밀번호는 기본값을 두지 않는다.
-schema-per-domain 전환을 고려해 공통 search_path를 연결 옵션으로 주입한다.
+DB connection details are read from environment variables, and the password has no default.
+To accommodate the schema-per-domain transition, a common search_path is injected as a connection option.
 """
 
 import os

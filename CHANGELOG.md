@@ -1,70 +1,70 @@
 # CHANGELOG
 
-port-interest-preprocessor 코드와 문서의 주요 변경 이력을 기록한다.
+Records the primary change history of port-interest-preprocessor code and documentation.
 
-## 작성 원칙
+## Authoring Principles
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| 기록 범위 | Preprocessor 코드 · feature · orchestration · 설정 · 테스트 · 문서 |
-| 제외 범위 | 다른 MS 내부 구현 · 전체 Step Functions 정의 · 일회성 운영 로그 |
-| 정렬 | 최신 날짜를 상단에 추가 |
-| 분류 | Added · Changed · Fixed · Removed · Security |
-| 실행 기록 | 실제 수행한 검증만 기록 |
-| 민감정보 | credential · host · ARN · command id 원문 금지 |
+| Scope | Preprocessor code · feature · orchestration · configuration · tests · documentation |
+| Excluded scope | Other MS internal implementation · full Step Functions definition · one-time operational logs |
+| Ordering | Add the latest date at the top |
+| Classification | Added · Changed · Fixed · Removed · Security |
+| Execution records | Record only validation actually performed |
+| Sensitive information | No verbatim credential · host · ARN · command id |
 
-## 2026-08-10 — Preprocessor Data Shadow와 승인 기반 Promotion
+## 2026-08-10 — Preprocessor Data Shadow and Approval-based Promotion
 
 ### Added
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| 실행 모드 | `db_config.py` Production/Shadow run mode |
-| Shadow routing | `preprocessor_shadow` search_path 계약 |
+| Run mode | `db_config.py` Production/Shadow run mode |
+| Shadow routing | `preprocessor_shadow` search_path contract |
 | Shadow Control Runner | `.devops/shadow-control/` Prepare · Quality Gate · Cleanup · Verify Cleanup · Evidence |
-| Data Shadow Quality Gate | Candidate 실행 · Shadow output · Production integrity 검증 |
-| Cleanup / Verify Cleanup | Shadow 결과 제거 · residual 0 · Production DML 금지 |
-| Shadow orchestration | 별도 Preprocessor Shadow validation State Machine |
-| Production 승인 Gate | GitHub `production` Environment manual approval |
-| 배포 파이프라인 | push 기반 Candidate → Shadow → Approval → Promotion |
+| Data Shadow Quality Gate | Candidate execution · Shadow output · Production integrity validation |
+| Cleanup / Verify Cleanup | Remove Shadow results · 0 residual · no Production DML |
+| Shadow orchestration | Separate Preprocessor Shadow validation State Machine |
+| Production approval Gate | GitHub `production` Environment manual approval |
+| Deployment pipeline | push-based Candidate → Shadow → Approval → Promotion |
 
 ### Changed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| GitHub Actions | main push 기반 Candidate pipeline으로 확장 |
-| Candidate Task Definition | digest-pinned image로 등록 |
-| Production 활성화 | manual approval 이후로 분리 |
-| OIDC trust context | main branch CI와 `production` Environment promotion으로 확장 |
-| Step 3 promotion | Shadow-tested 동일 Candidate Artifact 기준으로 변경 |
+| GitHub Actions | Extended to a main push-based Candidate pipeline |
+| Candidate Task Definition | Registered with a digest-pinned image |
+| Production activation | Separated to after manual approval |
+| OIDC trust context | Extended to main branch CI and `production` Environment promotion |
+| Step 3 promotion | Changed to be based on the Shadow-tested same Candidate Artifact |
 
 ### Fixed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| Cleanup 의존성 | Quality Gate PASS 의존 제거 · Prepare Evidence 기준으로 변경 |
-| Sequence cleanup | RESTART IDENTITY 대신 CONTINUE IDENTITY 적용 |
-| Promotion OIDC | `production` Environment subject 불일치 trust 조건 수정 |
+| Cleanup dependency | Removed Quality Gate PASS dependency · changed to Prepare Evidence basis |
+| Sequence cleanup | Applied CONTINUE IDENTITY instead of RESTART IDENTITY |
+| Promotion OIDC | Fixed trust condition for `production` Environment subject mismatch |
 
 ### Security
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| Production Schema DML | 금지 |
-| Shadow schema | 물리 격리 |
-| 인증 | GitHub OIDC · 장기 AWS Access Key 없음 |
-| Production 활성화 | manual approval 필수 |
-| 승인 후 rebuild · reregister | 금지 |
-| account · ARN · credential 원문 | 문서 신규 기록 없음 |
+| Production Schema DML | Prohibited |
+| Shadow schema | Physically isolated |
+| Authentication | GitHub OIDC · no long-lived AWS Access Key |
+| Production activation | Manual approval required |
+| Rebuild · reregister after approval | Prohibited |
+| Verbatim account · ARN · credential | No new record in documentation |
 
 ### Verification
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| Shadow DB routing contract test | 성공 |
-| Shadow Control Runner test | 성공 |
-| Prepare | 성공 |
-| Candidate Shadow ECS 실행 | 성공 |
+| Shadow DB routing contract test | Success |
+| Shadow Control Runner test | Success |
+| Prepare | Success |
+| Candidate Shadow ECS execution | Success |
 | Quality Gate | PASS |
 | Cleanup | PASS |
 | Verify Cleanup | PASS (READ_ONLY) |
@@ -72,232 +72,232 @@ port-interest-preprocessor 코드와 문서의 주요 변경 이력을 기록한
 | Shadow residual | 0 |
 | Production Integrity | PASS |
 | Shadow E2E | SUCCEEDED |
-| GitHub production approval | 성공 |
-| 동일 Candidate Artifact Promotion | 성공 |
-| FAIL-path 강제 E2E | 미수행 |
+| GitHub production approval | Success |
+| Same Candidate Artifact Promotion | Success |
+| FAIL-path forced E2E | Not performed |
 
-## 2026-07-30 — Preprocessor DevOps 구현
+## 2026-07-30 — Preprocessor DevOps Implementation
 
 ### Added
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
 | CodeBuild BuildSpec | `.devops/codebuild/buildspec.yml` |
 | GitHub Actions workflow | `.github/workflows/preprocessor-codebuild.yml` |
 | Container Smoke Test | `.devops/scripts/container-smoke.py` |
-| Python Compile 검증 | CI gate |
+| Python Compile validation | CI gate |
 | Unit Test | `tests/test_pre_daily_structure.py` |
-| Static Analysis | ruff 기반 CI gate |
+| Static Analysis | ruff-based CI gate |
 | Docker Build | CI gate |
-| 선택적 ECR Push | 수동 실행 입력 제어 |
-| GitHub OIDC Role | Preprocessor 전용 IAM Role |
-| 배포 증적 | Git SHA와 Image Digest 기반 |
+| Optional ECR Push | Controlled by manual-run input |
+| GitHub OIDC Role | Preprocessor-dedicated IAM Role |
+| Deployment evidence | Based on Git SHA and Image Digest |
 
 ### Changed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| 기본 브랜치 | GitHub Repository main 운영 |
-| Build 연계 | GitHub Actions와 CodeBuild 연계 |
-| Role 전달 | Repository Variable을 통한 OIDC Role 전달 |
-| ECS Revision | 신규 Task Definition Revision 등록 |
-| Container Image | ECR Digest로 고정 |
-| Step Functions | `Step3_RunPreprocessor`를 신규 Revision으로 전환 |
-| Rollback 검증 | 이전 Revision Rollback 후 신규 Revision 재승격 검증 |
-| End-to-End | GitHub SHA부터 활성 Revision까지 정합성 검증 |
+| Default branch | GitHub Repository main operation |
+| Build integration | GitHub Actions and CodeBuild integration |
+| Role passing | OIDC Role passed via Repository Variable |
+| ECS Revision | Register a new Task Definition Revision |
+| Container Image | Pinned by ECR Digest |
+| Step Functions | Switch `Step3_RunPreprocessor` to the new Revision |
+| Rollback validation | Validate re-promotion of the new Revision after rolling back to the previous Revision |
+| End-to-End | Consistency validation from GitHub SHA to the active Revision |
 
 ### Fixed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| AWS credential provider | GitHub Actions 미설정 문제 해결 |
-| Secret · Variable 참조 | Repository Secret과 Variable 참조 방식 불일치 정정 |
-| OIDC Role 오사용 | 다른 Repository 전용 Role 오사용 정정 |
-| 전용 Role · 최소 권한 | Preprocessor 전용 OIDC Role과 최소 CodeBuild 권한 구성 |
-| Trust Policy | immutable OIDC subject 형식에 맞춰 수정 |
+| AWS credential provider | Resolved GitHub Actions unset issue |
+| Secret · Variable reference | Corrected the mismatch between Repository Secret and Variable references |
+| OIDC Role misuse | Corrected misuse of another Repository's dedicated Role |
+| Dedicated Role · least privilege | Configured a Preprocessor-dedicated OIDC Role and minimal CodeBuild privileges |
+| Trust Policy | Fixed to match the immutable OIDC subject format |
 
 ### Security
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| 장기 AWS Access Key | 사용 없음 |
-| 인증 | GitHub OIDC 사용 |
-| Trust Policy | Repository · branch 제한 |
-| 권한 | CodeBuild 프로젝트 단위 최소 권한 |
-| credential · secret 원문 | 신규 기록 없음 |
-| 운영 DB DML | 실행 없음 |
-| 실제 Holiday API 호출 | 없음 |
-| 주문 실행 | 없음 |
-| ARN · account ID · Digest · Run ID · Build ID | 문서 신규 기록 없음 |
-| 실제 수행한 AWS 변경 | OIDC Role 구성 · Task Definition Revision 등록 · Step Functions 참조 전환 |
+| Long-lived AWS Access Key | Not used |
+| Authentication | GitHub OIDC used |
+| Trust Policy | Repository · branch restricted |
+| Privileges | CodeBuild project-level least privilege |
+| Verbatim credential · secret | No new record |
+| Operational DB DML | Not executed |
+| Actual Holiday API call | None |
+| Order execution | None |
+| ARN · account ID · Digest · Run ID · Build ID | No new record in documentation |
+| Actual AWS changes performed | OIDC Role configuration · Task Definition Revision registration · Step Functions reference switch |
 
 ### Verification
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| GitHub Actions | 성공 |
-| CodeBuild | 성공 |
-| ECR Image Push | 성공 |
-| ECS Task Definition 신규 Revision | 성공 |
-| Step Functions Revision 전환 | 성공 |
-| 이전 Revision Rollback | 성공 |
-| 신규 Revision 재승격 | 성공 |
-| End-to-End 정합성 | 성공 |
+| GitHub Actions | Success |
+| CodeBuild | Success |
+| ECR Image Push | Success |
+| ECS Task Definition new Revision | Success |
+| Step Functions Revision switch | Success |
+| Previous Revision Rollback | Success |
+| New Revision re-promotion | Success |
+| End-to-End consistency | Success |
 
-## 2026-07-22 — Preprocessor 문서 기준 재정비
+## 2026-07-22 — Preprocessor Documentation Standard Reorganization
 
 ### Changed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| `AGENTS.md` | Preprocessor 전용 작업 규칙으로 전면 재작성 |
-| 최우선 규칙 | 신규 독립 표 2컬럼 · 국소 수정 · 긴 셀 금지 |
-| 데이터 계약 | `interest` raw → `preprocessor` feature 책임 강화 |
-| Daily Step 3 | `pre_daily.py` 호출 순서와 단계 의존성 정리 |
-| Agency 단계 | `pre_agency_analysis.run()` 주석 처리 상태 명확화 |
-| 부분 실패 | 중간 실패 뒤 total feature 진행 금지 기준 추가 |
-| Feature 기준 | News · Agency · Price · Macro · Flow · Total 구분 |
-| 계산 안전 | look-ahead bias · rolling window · 미확정 데이터 금지 |
-| DB 기준 | unique key · upsert · delete 범위 · transaction 강화 |
-| Holiday API | 장애를 정상 영업일 또는 SKIP으로 숨기지 않는 기준 추가 |
-| 테스트 기준 | DB · HTTP mock과 join cardinality 검증 중심으로 정리 |
-| `README.md` | 현재 상태 · 데이터 흐름 · 실행 위험 중심으로 전면 재구성 |
-| 문서 체계 | README · CHANGELOG · source catalog 중심으로 정리 |
-| Worklog 정책 | 날짜별 worklog 신규 생성을 중단하고 CHANGELOG로 통합 |
-| `docs/source-file-catalog.md` | 5열 장문 목록을 feature 책임 · 데이터 계약 · 변경 영향 중심의 2열 구조로 재구성 |
-| Daily Step 3 표 | 4번 `pre_agency_analysis.run()`을 주석 처리 · 미실행로 명시하고 표 제목을 단계 구성으로 통일 |
-| Agency 집계 | `pre_agency_daily_aggregator`가 `interest_agency_raw`를 직접 읽어 analysis 산출에 비의존함을 반영 |
-| DB 환경변수 | 코드 미사용 `PORTFOLIO_DB_NAME`을 README 설정 표에서 제거 |
-| Total Market 입력 | `Market Flow`를 Market-level Investor Flow로 구체화 |
-| 운영 wrapper | `Dockerfile`을 source catalog 운영 wrapper 항목에 추가 |
+| `AGENTS.md` | Fully rewritten as Preprocessor-dedicated working rules |
+| Top-priority rules | New standalone tables 2-column · local edits · no long cells |
+| Data contract | Strengthened `interest` raw → `preprocessor` feature responsibility |
+| Daily Step 3 | Organized `pre_daily.py` call order and stage dependencies |
+| Agency stage | Clarified the commented-out state of `pre_agency_analysis.run()` |
+| Partial failure | Added the standard prohibiting Total Feature progression after a mid-stage failure |
+| Feature standards | Distinguished News · Agency · Price · Macro · Flow · Total |
+| Calculation safety | Prohibited look-ahead bias · rolling window · unconfirmed data |
+| DB standards | Strengthened unique key · upsert · delete range · transaction |
+| Holiday API | Added the standard not to hide a failure as a normal business day or SKIP |
+| Test standards | Organized around DB · HTTP mock and join cardinality validation |
+| `README.md` | Fully restructured around current state · data flow · execution risk |
+| Documentation system | Organized around README · CHANGELOG · source catalog |
+| Worklog policy | Stopped creating date-specific worklogs and consolidated into the CHANGELOG |
+| `docs/source-file-catalog.md` | Restructured the 5-column long-form list into a 2-column structure centered on feature responsibility · data contract · change impact |
+| Daily Step 3 table | Marked stage 4 `pre_agency_analysis.run()` as commented out · not executed and unified the table title to stage composition |
+| Agency aggregation | Reflected that `pre_agency_daily_aggregator` reads `interest_agency_raw` directly and is independent of analysis output |
+| DB environment variables | Removed the code-unused `PORTFOLIO_DB_NAME` from the README configuration table |
+| Total Market input | Specified `Market Flow` as Market-level Investor Flow |
+| Operational wrapper | Added `Dockerfile` to the source catalog operational wrapper items |
 
 ### Security
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| Python 코드 변경 | 없음 |
-| `pre_daily.py` · 개별 `pre_*.py` 실행 | 0건 |
-| DB · Holiday API 실행 | 0건 |
-| Crawler · Model · AWS · Slack 실행 | 0건 |
-| Git write 명령 | 0건 |
-| 민감정보 원문 신규 기록 | 0건 |
+| Python code changes | None |
+| `pre_daily.py` · individual `pre_*.py` execution | 0 |
+| DB · Holiday API execution | 0 |
+| Crawler · Model · AWS · Slack execution | 0 |
+| Git write commands | 0 |
+| New verbatim sensitive-info records | 0 |
 
-## 2026-07-01 — AWS Step 3와 책임 경계 문서화
+## 2026-07-01 — AWS Step 3 and Responsibility Boundary Documentation
 
 ### Added
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| AWS 운영 구조 | Daily Step 3 전처리 실행 단위 |
-| 실행 후보 | ECS RunTask · container |
-| 책임 경계 | 수집 · 전략 · 주문 · View와 분리 |
-| 데이터 흐름 | Crawler raw → Preprocessor feature → Strategy |
-| Daily 순서 | `pre_daily.py` 현재 호출 순서 |
-| Agency 상태 | `pre_agency_analysis.run()` 주석 처리 |
-| Source catalog | 실행 위험 요약 |
+| AWS operational structure | Daily Step 3 preprocessing execution unit |
+| Execution candidate | ECS RunTask · container |
+| Responsibility boundary | Separated from collection · strategy · order · View |
+| Data flow | Crawler raw → Preprocessor feature → Strategy |
+| Daily order | `pre_daily.py` current call order |
+| Agency state | `pre_agency_analysis.run()` commented out |
+| Source catalog | Execution-risk summary |
 | Worklog | `docs/worklog/2026-07-01.md` |
 
 ### Changed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| `pre_daily.py` 문서 | Agency analysis 비활성 상태 반영 |
-| Source catalog | Step 3 실행 후보와 주의사항 반영 |
+| `pre_daily.py` documentation | Reflected the inactive state of Agency analysis |
+| Source catalog | Reflected Step 3 execution candidates and cautions |
 
 ### Security
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| Python · SQL 변경 | 없음 |
-| 전처리 · API · DB 실행 | 0건 |
-| Model · Crawler · 주문 실행 | 0건 |
-| AWS · Slack 실행 | 0건 |
-| 민감정보 원문 신규 기록 | 0건 |
+| Python · SQL changes | None |
+| Preprocessing · API · DB execution | 0 |
+| Model · Crawler · order execution | 0 |
+| AWS · Slack execution | 0 |
+| New verbatim sensitive-info records | 0 |
 
-## 2026-05-28 — Source Catalog와 Module Docstring
+## 2026-05-28 — Source Catalog and Module Docstring
 
 ### Added
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| `docs/source-file-catalog.md` | 주요 파일 역할과 운영 주의사항 |
-| Module docstring | Python 전처리 script · DB · Holiday helper |
+| `docs/source-file-catalog.md` | Primary file roles and operational cautions |
+| Module docstring | Python preprocessing scripts · DB · Holiday helper |
 | Worklog | `docs/worklog/2026-05-28.md` |
 
 ### Changed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| README | 문서화 · 주석 정리 내용 반영 |
-| 문서 구조 | Source catalog 위치 안내 |
+| README | Reflected documentation · comment cleanup content |
+| Documentation structure | Source catalog location guidance |
 
 ### Security
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| 기능 변경 | 없음 |
-| SQL · Step 순서 · 함수 시그니처 변경 | 없음 |
-| DB · API 실행 | 0건 |
-| 민감정보 원문 신규 기록 | 0건 |
+| Functional changes | None |
+| SQL · Step order · function signature changes | None |
+| DB · API execution | 0 |
+| New verbatim sensitive-info records | 0 |
 
-## 2026-05-27 — DB 설정 외부화
+## 2026-05-27 — DB Configuration Externalization
 
 ### Added
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
 | Database | PostgreSQL `portfolio` |
-| Schema 구조 | schema-per-domain |
+| Schema structure | schema-per-domain |
 | search path | `preprocessor, interest, reference, legacy, public` |
 
 ### Changed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| DB loader | `db_config.py`의 `get_db_config()` |
-| 환경변수 | `INTEREST_DB_*` |
-| Database name | `portfolio` 기본값 |
-| SQL 호환 | 기존 unqualified SQL의 search path 전제 |
+| DB loader | `get_db_config()` in `db_config.py` |
+| Environment variables | `INTEREST_DB_*` |
+| Database name | `portfolio` default |
+| SQL compatibility | search path assumption of existing unqualified SQL |
 
 ### Security
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| Hardcoded password | 전처리 script에서 제거 |
-| Secret 관리 | 환경변수 또는 local-only config |
-| 문서 원문 기록 | password · token · account · webhook 금지 |
+| Hardcoded password | Removed from preprocessing scripts |
+| Secret management | Environment variables or local-only config |
+| Verbatim documentation record | password · token · account · webhook prohibited |
 
-## 2026-05-26 — 초기 문서와 Legacy 정리
+## 2026-05-26 — Initial Documentation and Legacy Cleanup
 
 ### Added
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| `AGENTS.md` | 초기 Preprocessor 작업 규칙 |
-| `README.md` | 프로젝트 구조 초안 |
+| `AGENTS.md` | Initial Preprocessor working rules |
+| `README.md` | Project structure draft |
 | Worklog | `docs/worklog/2026-05-26.md` |
 
 ### Removed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| `preprocessor_v1.py` | legacy 후보 |
-| `interest_pool.py` | legacy 후보 |
+| `preprocessor_v1.py` | legacy candidate |
+| `interest_pool.py` | legacy candidate |
 | `pre_total_daily_feature.py` | legacy total feature |
-| `test_pre_news_analysis.py` | 제거된 test 후보 |
-| `__pycache__/` | cache 산출물 |
+| `test_pre_news_analysis.py` | removed test candidate |
+| `__pycache__/` | cache artifact |
 
 ### Changed
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| README 구조 | 삭제 파일과 legacy 의존성 정리 반영 |
-| 문서 기준 | 현재 파일과 import · entrypoint 정적 확인 |
+| README structure | Reflected deleted files and legacy dependency cleanup |
+| Documentation basis | Static review of current files and import · entrypoint |
 
 ### Security
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| 전처리 · API · DB 실행 | 0건 |
-| Crawler · 주문 실행 | 0건 |
-| 민감정보 원문 신규 기록 | 0건 |
+| Preprocessing · API · DB execution | 0 |
+| Crawler · order execution | 0 |
+| New verbatim sensitive-info records | 0 |

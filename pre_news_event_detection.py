@@ -1,7 +1,7 @@
-"""뉴스 제목에서 이벤트와 섹터 노출 후보를 탐지하는 스크립트.
+"""Script that detects event and sector-exposure candidates from news titles.
 
-pre_event_* 기준 테이블과 interest_news_raw를 읽어 이벤트 confidence와 방향성을
-계산하고 pre_news_event에 upsert한다.
+Reads the pre_event_* reference tables and interest_news_raw, computes event
+confidence and direction, and upserts the results into pre_news_event.
 """
 
 import json
@@ -14,7 +14,7 @@ from psycopg2.extras import execute_batch
 PROCESSOR_VERSION = "EVENT-3.0.0"
 BATCH_SIZE = 5000
 
-# 필요하면 테스트용
+# For testing if needed
 TEST_LIMIT = None
 # TEST_LIMIT = 3000
 
@@ -119,21 +119,21 @@ def normalize_text(text):
 # =========================
 def infer_event_direction(event_name, title):
 
-    # 🔥 1. 시장 하락 override (최우선)
+    # 🔥 1. Market decline override (highest priority)
     market_negative = ["하락", "급락", "폭락", "약세"]
     for w in market_negative:
         if w in title:
             return "negative"
 
-    # 🔥 2. 전쟁 강제 negative
+    # 🔥 2. Force war events to negative
     if "전쟁" in event_name:
         return "negative"
 
-    # 🔥 1. 기대 감소 먼저 (특수 케이스)
+    # 🔥 1. Declining expectations first (special case)
     if "기대" in title and ("둔화" in title or "뚝" in title or "약화" in title):
         return "negative"
 
-    # 기존 코드 그대로
+    # Existing code, unchanged
     negative_override = [
     "소멸", "우려", "둔화", "악화", "충격", "공포",
     "하방", "압력", "부담", "뚝" ]
@@ -166,8 +166,8 @@ def infer_event_direction(event_name, title):
 # =========================
 def calc_confidence(total_keyword_weight, matched_count):
     """
-    너무 복잡하게 안 가고,
-    1~2개 핵심 키워드만 잡혀도 높은 confidence를 주는 방식.
+    Keeps things simple: assigns high confidence even when only one or two
+    core keywords are matched.
     """
     if matched_count <= 0:
         return 0.0
@@ -189,7 +189,7 @@ def detect_events(title, event_keywords):
 
     for event_name, keyword_rows in event_keywords.items():
 
-        # 🔥 1. 가짜 전쟁 필터 (여기 추가)
+        # 🔥 1. Fake-war filter (added here)
         if "전쟁" in text:
             fake_war_keywords = ["표 전쟁", "경쟁", "패권 경쟁", "시장 전쟁", "치킨 게임", "비만약 전쟁"]
             if any(fw in text for fw in fake_war_keywords):
@@ -199,7 +199,7 @@ def detect_events(title, event_keywords):
         matched_keywords = []
         total_keyword_weight = 0.0
 
-        # 긴 키워드 우선
+        # Prefer longer keywords
         for row in keyword_rows:
             kw = row["keyword"]
             kw_weight = row["keyword_weight"]
@@ -244,10 +244,10 @@ def build_insert_rows(news_id, title, published_at,
         base_weight = float(master.get("base_weight", 1.0))
         direction = infer_event_direction(event_name, title)
 
-        # 섹터 확장 테이블이 있으면 그걸 우선 사용
+        # Prefer the sector expansion table when it exists
         mapped_sectors = sector_weights.get(event_name, [])
 
-        # 혹시 sector mapping이 없으면 master의 대표 sector라도 1건 생성
+        # If no sector mapping exists, create at least one row from the master's representative sector
         if not mapped_sectors:
             fallback_sector = master.get("sector_kr")
             if fallback_sector:

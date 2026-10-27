@@ -1,7 +1,7 @@
-"""가격 원천 데이터를 종목/일자 단위 가격 feature로 변환하는 스크립트.
+"""Script that transforms price source data into per-ticker/date price features.
 
-interest_price_raw를 기반으로 수익률, 모멘텀, 이동평균, 변동성, 거래량,
-캔들 관련 지표를 계산해 pre_price_daily_feature에 저장한다.
+Based on interest_price_raw, it computes returns, momentum, moving averages, volatility,
+volume, and candle-related indicators and stores them in pre_price_daily_feature.
 """
 
 import psycopg2

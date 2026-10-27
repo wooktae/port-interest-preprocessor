@@ -1,7 +1,7 @@
-"""뉴스 원천 데이터를 종목별 감성 분석 후보 데이터로 변환하는 스크립트.
+"""Script that transforms raw news data into per-ticker sentiment analysis candidate data.
 
-interest_news_raw와 stock_universe를 읽어 종목 매핑, 키워드 추출, 감성 점수를
-계산한 뒤 pre_news_analysis에 upsert한다.
+Reads interest_news_raw and stock_universe, performs ticker mapping, keyword
+extraction, and sentiment scoring, then upserts the results into pre_news_analysis.
 """
 
 import json
@@ -26,7 +26,7 @@ def tokenize(text):
 
 
 # =========================
-# 조사 제거
+# Strip particles (postfixes)
 # =========================
 POSTFIX = ["은","는","이","가","을","를","와","과","도","에","에서","의","로","으로","만","까지","부터","랑","이랑"]
 
@@ -38,7 +38,7 @@ def strip_postfix(token):
 
 
 # =========================
-# 증권사 필터
+# Broker filter
 # =========================
 BROKER_KEYWORDS = ["증권", "證", "리포트", "목표가", "투자의견"]
 
@@ -53,13 +53,13 @@ def is_broker_noise(title, token):
 
 
 # =========================
-# 제외 단어
+# Excluded words
 # =========================
 EXCLUDE_WORDS = {"대상"}
 
 
 # =========================
-# 키워드 필터
+# Keyword filter
 # =========================
 STOPWORDS = {"주", "은", "는", "이", "가", "을", "를", "에", "의", "도"}
 
@@ -74,7 +74,7 @@ def clean_keyword(token):
 
 
 # =========================
-# SENTIMENT MAP (추가)
+# SENTIMENT MAP (added)
 # =========================
 SENTIMENT_SCORE_MAP = {
 
@@ -197,7 +197,7 @@ SENTIMENT_SCORE_MAP = {
     "변동성": -1,
 
     # =========================
-    # 🔥 추가 (상승/탈환 계열)
+    # 🔥 Added (rally / recovery family)
     # =========================
     "탈환": 4,
     "재탈환": 4,
@@ -206,13 +206,13 @@ SENTIMENT_SCORE_MAP = {
     "강세": 3,
     "오름": 2,
     "오르고": 2,
-    # 실적
+    # Earnings
     "사상 최대": 4,
     "최대 실적": 4,
     "호실적": 4,
     "실적 호조": 3,
 
-    # 마감
+    # Market close
     "상승 마감": 3,
     "강세 마감": 3,
     "하락 마감": -3,
@@ -231,7 +231,7 @@ REVERSAL_WORDS = ["에도 불구하고", "하지만", "불구", "에도"]
 
 
 # =========================
-# STOCK MAP (그대로 유지)
+# STOCK MAP (kept as-is)
 # =========================
 SHORT_NAMES = {"SK","LG","GS","CJ","KT","LS","DL"}
 
@@ -264,7 +264,7 @@ def load_alias_map(conn):
 
 
 # =========================
-# DETECT (절대 수정 없음)
+# DETECT (do not modify)
 # =========================
 def detect(title, alias_map):
     tokens = tokenize(title)
@@ -305,7 +305,7 @@ def detect(title, alias_map):
 
 
 # =========================
-# 감성 점수 계산 (추가)
+# Sentiment score calculation (added)
 # =========================
 def score_sentiment(title):
 
@@ -313,7 +313,7 @@ def score_sentiment(title):
     score = 0
     matched = []
 
-        # 🔥 여기 추가
+        # 🔥 Added here
     percent_patterns = [
         (r"\d+%↑", 3),
         (r"\d+%\s*상승", 3),
@@ -353,7 +353,7 @@ def score_sentiment(title):
 
 
 # =========================
-# 분류 (추가)
+# Classification (added)
 # =========================
 def classify(score):
     if score >= 3:
